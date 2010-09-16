@@ -135,6 +135,10 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
         mDiskNumParts = 1;
     }
 
+    if (mDiskNumParts > MAX_PARTITIONS) {
+        mDiskNumParts = MAX_PARTITIONS;
+    }
+
     char msg[255];
 
     int partmask = 0;
@@ -176,6 +180,11 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     } else {
         SLOGW("Kernel block uevent missing 'PARTN'");
         part_num = 1;
+    }
+
+    if (part_num > MAX_PARTITIONS) {
+        SLOGW("Current partition %d > 4 (Maximum partitions supported)", part_num);
+        return;
     }
 
     if (part_num > mDiskNumParts) {
