@@ -27,7 +27,7 @@ typedef android::List<char *> PathCollection;
 
 class DirectVolume : public Volume {
 public:
-    static const int MAX_PARTITIONS = 4;
+    static const int MAX_PARTITIONS = 16;
 protected:
     PathCollection *mPaths;
     int            mPartIdx;
@@ -35,7 +35,8 @@ protected:
     int            mDiskMinor;
     int            mPartMinors[MAX_PARTITIONS];
     int            mDiskNumParts;
-    unsigned char  mPendingPartMap;
+    unsigned char  mPendingPart;
+    bool           emmcCard;
 
 public:
     DirectVolume(VolumeManager *vm, const char *label, const char *mount_point, int partIdx);
