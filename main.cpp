@@ -23,6 +23,7 @@
 
 #include <fcntl.h>
 #include <dirent.h>
+#include <cutils/properties.h>
 
 #define LOG_TAG "Vold"
 
@@ -171,10 +172,15 @@ static int process_config(VolumeManager *vm) {
     FILE *fp;
     int n = 0;
     char line[255];
+    int sdcard_partition_override = 0;
+    char value[PROPERTY_VALUE_MAX];
 
     if (!(fp = fopen("/etc/vold.fstab", "r"))) {
         return -1;
     }
+
+    property_get("persist.emmc.sdcard.partition", value, "");
+    sdcard_partition_override = atoi(value);
 
     while(fgets(line, sizeof(line), fp)) {
         char *next = line;
@@ -218,6 +224,10 @@ static int process_config(VolumeManager *vm) {
                 dv = new DirectVolume(vm, label, mount_point, atoi(part));
             }
 
+            if ((!strcmp(label, "sdcard")) && sdcard_partition_override)  {
+                SLOGI("Setting Overriding SD card partition to %d", sdcard_partition_override);
+                dv->setOverrideSDPartition(sdcard_partition_override);
+            }
             while((sysfs_path = strsep(&next, " \t"))) {
                 if (dv->addPath(sysfs_path)) {
                     SLOGE("Failed to add devpath %s to volume %s", sysfs_path,
