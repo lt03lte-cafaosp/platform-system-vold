@@ -152,26 +152,49 @@ int Fat::format(const char *fsPath, unsigned int numSectors) {
     int fd;
     const char *args[11];
     int rc;
+    unsigned int nr_sec, Indx;
 
     args[0] = MKDOSFS_PATH;
     args[1] = "-F";
     args[2] = "32";
     args[3] = "-O";
     args[4] = "android";
+    Indx = 5;
+
+    if (numSectors) {
+        nr_sec = numSectors;
+    } else {
+        if ((fd = open(fsPath, O_RDWR)) < 0) {
+            LOGE("Error opening disk file (%s)", strerror(errno));
+            return -1;
+        }
+        if (ioctl(fd, BLKGETSIZE, &nr_sec)) {
+            LOGE("Unable to get device size (%s)", strerror(errno));
+            close(fd);
+            return -1;
+        }
+        close(fd);
+
+    }
+    if ((nr_sec/2) <= ((unsigned int) (1024*1024) * 2)) {    /* 2GB  */
+            args[Indx++] = "-c";
+            args[Indx++] = "8";
+
+    }
 
     if (numSectors) {
         char tmp[32];
         snprintf(tmp, sizeof(tmp), "%u", numSectors);
         const char *size = tmp;
-        args[5] = "-s";
-        args[6] = size;
-        args[7] = fsPath;
-        args[8] = NULL;
-        rc = logwrap(9, args, 1);
+        args[Indx++] = "-s";
+        args[Indx++] = size;
+        args[Indx++] = fsPath;
+        args[Indx++] = NULL;
+        rc = logwrap(Indx, args, 1);
     } else {
-        args[5] = fsPath;
-        args[6] = NULL;
-        rc = logwrap(7, args, 1);
+        args[Indx++] = fsPath;
+        args[Indx++] = NULL;
+        rc = logwrap(Indx, args, 1);
     }
 
     if (rc == 0) {
