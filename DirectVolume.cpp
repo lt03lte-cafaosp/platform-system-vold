@@ -38,8 +38,10 @@ DirectVolume::DirectVolume(VolumeManager *vm, const char *label,
     mPartIdx = partIdx;
 
     mPaths = new PathCollection();
-    for (int i = 0; i < MAX_PARTITIONS; i++)
+    for (int i = 0; i < MAX_PARTITIONS; i++) {
         mPartMinors[i] = -1;
+        mPartMajors[i] = -1;
+    }
     mPendingPart = 0;
     mDiskMajor = -1;
     mDiskMinor = -1;
@@ -87,7 +89,6 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
 
     PathCollection::iterator  it;
     int minor = atoi(evt->findParam("MINOR"));
-    int partNumber = getOverrideSDPartition();
 
     for (it = mPaths->begin(); it != mPaths->end(); ++it) {
         if (!strncmp(dp, *it, strlen(*it))) {
@@ -108,9 +109,7 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                 }
                 if (!strcmp(devtype, "disk")) {
                     handleDiskAdded(dp, evt);
-                } else if(!emmcCard){
-                    handlePartitionAdded(dp, evt);
-                } else if (emmcCard && partNumber == minor) {
+                } else {
                     handlePartitionAdded(dp, evt);
                 }
             } else if (action == NetlinkEvent::NlActionRemove) {
@@ -191,7 +190,7 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
 
-    int part_num;
+    int part_num, partitionNumber;
 
     const char *tmp = evt->findParam("PARTN");
 
@@ -202,19 +201,25 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
         part_num = 1;
     }
 
+    if (emmcCard) {
+        partitionNumber = getOverrideSDPartition();
+        if (partitionNumber != part_num) {
+            return;
+       }
+    }
     if (part_num > MAX_PARTITIONS) {
         SLOGW("Current partition %d > 4 (Maximum partitions supported)", part_num);
         return;
     }
 
     if (major != mDiskMajor) {
-        SLOGE("Partition '%s' has a different major than its disk!", devpath);
-        return;
+        SLOGI("Partition '%s' has a different major than its disk!", devpath);
     }
 #ifdef PARTITION_DEBUG
     SLOGD("Dv:partAdd: part_num = %d, minor = %d\n", part_num, minor);
 #endif
     mPartMinors[mDiskNumParts - mPendingPart] = minor;
+    mPartMajors[mDiskNumParts - mPendingPart] = major;
 
     if(mPendingPart > 0) mPendingPart--;
 
@@ -340,10 +345,10 @@ int DirectVolume::getDeviceNodes(dev_t *devs, int max) {
         for (i = 0; i < mDiskNumParts; i++) {
             if (i == max)
                 break;
-            devs[i] = MKDEV(mDiskMajor, mPartMinors[i]);
+            devs[i] = MKDEV(mPartMajors[i], mPartMinors[i]);
         }
         return mDiskNumParts;
     }
-    devs[0] = MKDEV(mDiskMajor, mPartMinors[mPartIdx -1]);
+    devs[0] = MKDEV(mPartMajors[mPartIdx -1], mPartMinors[mPartIdx -1]);
     return 1;
 }
