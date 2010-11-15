@@ -179,7 +179,7 @@ static int process_config(VolumeManager *vm) {
         return -1;
     }
 
-    property_get("persist.emmc.sdcard.partition", value, "");
+    property_get("ro.emmc.sdcard.partition", value, "");
     sdcard_partition_override = atoi(value);
 
     while(fgets(line, sizeof(line), fp)) {
