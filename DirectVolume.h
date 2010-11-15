@@ -34,6 +34,7 @@ protected:
     int            mDiskMajor;
     int            mDiskMinor;
     int            mPartMinors[MAX_PARTITIONS];
+    int            mPartMajors[MAX_PARTITIONS];
     int            mDiskNumParts;
     unsigned char  mPendingPart;
     bool           emmcCard;
