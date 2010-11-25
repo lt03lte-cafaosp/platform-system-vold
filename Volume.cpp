@@ -140,6 +140,9 @@ dev_t Volume::getDiskDevice() {
     return MKDEV(0, 0);
 };
 
+dev_t Volume::getDiskDeviceNode() {
+    return MKDEV(0, 0);
+};
 void Volume::handleVolumeShared() {
 }
 
@@ -219,7 +222,8 @@ int Volume::formatVol() {
     setState(Volume::State_Formatting);
     int partNumber = getOverrideSDPartition();
     if (partNumber > 0) {
-        partNode = MKDEV(MAJOR(diskNode), MINOR(diskNode)+ partNumber);
+        dev_t d =  getDiskDeviceNode();
+        partNode = MKDEV(MAJOR(d), MINOR(d));
     } else {
         if (initializeMbr(devicePath)) {
             SLOGE("Failed to initialize MBR (%s)", strerror(errno));

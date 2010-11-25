@@ -68,6 +68,15 @@ dev_t DirectVolume::getDiskDevice() {
     return MKDEV(mDiskMajor, mDiskMinor);
 }
 
+dev_t DirectVolume::getDiskDeviceNode() {
+
+    if (emmcCard) {
+        return MKDEV(mPartMajors[0], mPartMinors[0]);
+    } else {
+        return MKDEV(mDiskMajor, mDiskMinor);
+    }
+}
+
 void DirectVolume::handleVolumeShared() {
     setState(Volume::State_Shared);
 }
