@@ -74,6 +74,7 @@ public:
     virtual dev_t getDiskDevice();
     virtual void handleVolumeShared();
     virtual void handleVolumeUnshared();
+    virtual dev_t getDiskDeviceNode();
 
     void setDebug(bool enable);
 
