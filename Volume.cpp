@@ -214,7 +214,7 @@ int Volume::formatVol() {
     bool formatEntireDevice = (mPartIdx == -1);
     char devicePath[255];
     dev_t diskNode = getDiskDevice();
-    dev_t partNode = MKDEV(MAJOR(diskNode), (formatEntireDevice ? 1 : mPartIdx));
+    dev_t partNode = MKDEV(MAJOR(diskNode), (formatEntireDevice ? 1 : MINOR(diskNode)+1));
 
     setState(Volume::State_Formatting);
 
@@ -244,6 +244,7 @@ int Volume::formatVol() {
     setState(Volume::State_Idle);
     return 0;
 err:
+    setState(Volume::State_Idle);
     return -1;
 }
 
