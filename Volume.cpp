@@ -150,6 +150,10 @@ dev_t Volume::getShareDevice() {
     return getDiskDevice();
 }
 
+dev_t Volume::getDiskDeviceNode() {
+    return MKDEV(0, 0);
+};
+
 void Volume::handleVolumeShared() {
 }
 
@@ -225,7 +229,8 @@ int Volume::formatVol() {
 
     int partNumber = getOverrideSDPartition();
     if (partNumber > 0) {
-        partNode = MKDEV(MAJOR(diskNode), MINOR(diskNode)+ partNumber);
+        dev_t d =  getDiskDeviceNode();
+        partNode = MKDEV(MAJOR(d), MINOR(d));
     } else {
 
     // Only initialize the MBR if we are formatting the entire device

@@ -68,11 +68,21 @@ dev_t DirectVolume::getDiskDevice() {
     return MKDEV(mDiskMajor, mDiskMinor);
 }
 
+
 dev_t DirectVolume::getShareDevice() {
     if (mPartIdx != -1) {
         return MKDEV(mDiskMajor, mPartIdx);
     } else {
         return MKDEV(mDiskMajor, mDiskMinor);
+    }
+}
+
+dev_t DirectVolume::getDiskDeviceNode() {
+
+    if (emmcCard) {
+        return MKDEV(mPartMajors[0], mPartMinors[0]);
+    } else {
+        return getShareDevice();
     }
 }
 
