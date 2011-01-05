@@ -25,6 +25,7 @@ class VolumeManager;
 class Volume {
 private:
     int mState;
+    int mPartitionNumber;
 
 public:
     static const int State_Init       = -1;
@@ -70,6 +71,8 @@ public:
     const char *getMountpoint() { return mMountpoint; }
     int getState() { return mState; }
 
+    int getOverrideSDPartition() { return mPartitionNumber; }
+    void setOverrideSDPartition(int partitionNumber);
     virtual int handleBlockEvent(NetlinkEvent *evt);
     virtual dev_t getDiskDevice();
     virtual dev_t getShareDevice();

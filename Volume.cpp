@@ -111,6 +111,7 @@ Volume::Volume(VolumeManager *vm, const char *label, const char *mount_point) {
     mState = Volume::State_Init;
     mCurrentlyMountedKdev = -1;
     mPartIdx = -1;
+    mPartitionNumber = 0;
 }
 
 Volume::~Volume() {
@@ -182,6 +183,10 @@ void Volume::setState(int state) {
                                          msg, false);
 }
 
+void Volume::setOverrideSDPartition(int partitionNumber) {
+     mPartitionNumber = partitionNumber;
+}
+
 int Volume::createDeviceNode(const char *path, int major, int minor) {
     mode_t mode = 0660 | S_IFBLK;
     dev_t dev = (major << 8) | minor;
@@ -218,15 +223,21 @@ int Volume::formatVol() {
 
     setState(Volume::State_Formatting);
 
-    // Only initialize the MBR if we are formatting the entire device
-    if (formatEntireDevice) {
-        sprintf(devicePath, "/dev/block/vold/%d:%d",
-                MAJOR(diskNode), MINOR(diskNode));
+    int partNumber = getOverrideSDPartition();
+    if (partNumber > 0) {
+        partNode = MKDEV(MAJOR(diskNode), MINOR(diskNode)+ partNumber);
+    } else {
 
-        if (initializeMbr(devicePath)) {
-            SLOGE("Failed to initialize MBR (%s)", strerror(errno));
-            goto err;
+    // Only initialize the MBR if we are formatting the entire device
+        if (formatEntireDevice) {
+            sprintf(devicePath, "/dev/block/vold/%d:%d",
+                MAJOR(diskNode), MINOR(diskNode));
+            if (initializeMbr(devicePath)) {
+                SLOGE("Failed to initialize MBR (%s)", strerror(errno));
+                goto err;
+            }
         }
+        partNode = MKDEV(MAJOR(diskNode), MINOR(diskNode)+1);
     }
 
     sprintf(devicePath, "/dev/block/vold/%d:%d",

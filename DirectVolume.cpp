@@ -40,10 +40,11 @@ DirectVolume::DirectVolume(VolumeManager *vm, const char *label,
     mPaths = new PathCollection();
     for (int i = 0; i < MAX_PARTITIONS; i++)
         mPartMinors[i] = -1;
-    mPendingPartMap = 0;
+    mPendingPart = 0;
     mDiskMajor = -1;
     mDiskMinor = -1;
     mDiskNumParts = 0;
+    emmcCard = false;
 
     setState(Volume::State_NoMedia);
 }
@@ -85,6 +86,9 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
     const char *dp = evt->findParam("DEVPATH");
 
     PathCollection::iterator  it;
+    int minor = atoi(evt->findParam("MINOR"));
+    int partNumber = getOverrideSDPartition();
+
     for (it = mPaths->begin(); it != mPaths->end(); ++it) {
         if (!strncmp(dp, *it, strlen(*it))) {
             /* We can handle this disk */
@@ -93,7 +97,6 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
 
             if (action == NetlinkEvent::NlActionAdd) {
                 int major = atoi(evt->findParam("MAJOR"));
-                int minor = atoi(evt->findParam("MINOR"));
                 char nodepath[255];
 
                 snprintf(nodepath,
@@ -105,7 +108,9 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                 }
                 if (!strcmp(devtype, "disk")) {
                     handleDiskAdded(dp, evt);
-                } else {
+                } else if(!emmcCard){
+                    handlePartitionAdded(dp, evt);
+                } else if (emmcCard && partNumber == minor) {
                     handlePartitionAdded(dp, evt);
                 }
             } else if (action == NetlinkEvent::NlActionRemove) {
@@ -147,14 +152,19 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
         mDiskNumParts = MAX_PARTITIONS;
     }
 
+    if (mDiskNumParts > 4)
+        emmcCard = true;
+    else
+        emmcCard = false;
+
+    int partNumber = getOverrideSDPartition();
+    if (partNumber > 0) {
+        mDiskNumParts = 1;
+    }
+
     char msg[255];
 
-    int partmask = 0;
-    int i;
-    for (i = 1; i <= mDiskNumParts; i++) {
-        partmask |= (1 << i);
-    }
-    mPendingPartMap = partmask;
+    mPendingPart = mDiskNumParts;
 
     if (mDiskNumParts == 0) {
 #ifdef PARTITION_DEBUG
@@ -164,15 +174,17 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
     } else {
 #ifdef PARTITION_DEBUG
         SLOGD("Dv::diskIns - waiting for %d partitions (mask 0x%x)",
-             mDiskNumParts, mPendingPartMap);
+             mDiskNumParts, mPendingPart);
 #endif
         setState(Volume::State_Pending);
     }
 
-    snprintf(msg, sizeof(msg), "Volume %s %s disk inserted (%d:%d)",
-             getLabel(), getMountpoint(), mDiskMajor, mDiskMinor);
-    mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskInserted,
-                                             msg, false);
+    if (!emmcCard || (partNumber > 0 && emmcCard)) {
+          snprintf(msg, sizeof(msg), "Volume %s %s disk inserted (%d:%d)",
+                   getLabel(), getMountpoint(), mDiskMajor, mDiskMinor);
+          mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskInserted,
+                                              msg, false);
+    }
 }
 
 void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) {
@@ -195,10 +207,6 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
         return;
     }
 
-    if (part_num > mDiskNumParts) {
-        mDiskNumParts = part_num;
-    }
-
     if (major != mDiskMajor) {
         SLOGE("Partition '%s' has a different major than its disk!", devpath);
         return;
@@ -206,10 +214,11 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
 #ifdef PARTITION_DEBUG
     SLOGD("Dv:partAdd: part_num = %d, minor = %d\n", part_num, minor);
 #endif
-    mPartMinors[part_num -1] = minor;
+    mPartMinors[mDiskNumParts - mPendingPart] = minor;
 
-    mPendingPartMap &= ~(1 << part_num);
-    if (!mPendingPartMap) {
+    if(mPendingPart > 0) mPendingPart--;
+
+    if (mPendingPart == 0) {
 #ifdef PARTITION_DEBUG
         SLOGD("Dv:partAdd: Got all partitions - ready to rock!");
 #endif
@@ -218,7 +227,7 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
         }
     } else {
 #ifdef PARTITION_DEBUG
-        SLOGD("Dv:partAdd: pending mask now = 0x%x", mPendingPartMap);
+        SLOGD("Dv:partAdd: pending mask now = 0x%x", mPendingPart);
 #endif
     }
 }
@@ -239,14 +248,13 @@ void DirectVolume::handleDiskChanged(const char *devpath, NetlinkEvent *evt) {
         SLOGW("Kernel block uevent missing 'NPARTS'");
         mDiskNumParts = 1;
     }
+    if (mDiskNumParts == 0)  mDiskNumParts = 1;
 
-    int partmask = 0;
-    int i;
-    for (i = 1; i <= mDiskNumParts; i++) {
-        partmask |= (1 << i);
+    if (mDiskNumParts > MAX_PARTITIONS) {
+        mDiskNumParts = MAX_PARTITIONS;
     }
-    mPendingPartMap = partmask;
 
+    mPendingPart =  mDiskNumParts;
     if (getState() != Volume::State_Formatting) {
         if (mDiskNumParts == 0) {
             setState(Volume::State_Idle);
