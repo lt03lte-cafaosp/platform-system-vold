@@ -486,7 +486,7 @@ int Volume::doMoveMount(const char *src, const char *dst, bool force) {
 }
 
 int Volume::doUnmount(const char *path, bool force) {
-    int retries = 10;
+    int retries = 20;
 
     if (mDebug) {
         SLOGD("Unmounting {%s}, force = %d", path, force);
