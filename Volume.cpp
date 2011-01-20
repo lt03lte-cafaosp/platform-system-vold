@@ -514,6 +514,10 @@ int Volume::doUnmount(const char *path, bool force) {
         Process::killProcessesWithOpenFiles(path, action);
         usleep(1000*1000);
     }
+    if (!umount(path) || errno == EINVAL || errno == ENOENT) {
+        SLOGI("%s sucessfully unmounted", path);
+        return 0;
+    }
     errno = EBUSY;
     SLOGE("Giving up on unmount %s (%s)", path, strerror(errno));
     return -1;
