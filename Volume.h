@@ -25,7 +25,6 @@ class VolumeManager;
 class Volume {
 private:
     int mState;
-    int mPartitionNumber;
 
 public:
     static const int State_Init       = -1;
@@ -50,6 +49,7 @@ protected:
     char *mMountpoint;
     VolumeManager *mVm;
     bool mDebug;
+    int mPartitionNumber;
 
     /*
      * The major/minor tuple of the currently mounted filesystem.
@@ -68,7 +68,7 @@ public:
     const char *getMountpoint() { return mMountpoint; }
     int getState() { return mState; }
 
-    int getOverrideSDPartition() { return mPartitionNumber; }
+    int getOverrideSDPartition() { return getEmmcCardVal() ? mPartitionNumber : 0; }
     void setOverrideSDPartition(int partitionNumber);
     virtual int handleBlockEvent(NetlinkEvent *evt);
     virtual dev_t getDiskDevice();
@@ -81,6 +81,7 @@ public:
 protected:
     void setState(int state);
 
+    virtual bool getEmmcCardVal() = 0;
     virtual int getDeviceNodes(dev_t *devs, int max) = 0;
 
     int createDeviceNode(const char *path, int major, int minor);

@@ -50,6 +50,7 @@ public:
     dev_t getDiskDeviceNode();
     void handleVolumeShared();
     void handleVolumeUnshared();
+    bool getEmmcCardVal() { return emmcCard; }
 
 protected:
     int getDeviceNodes(dev_t *devs, int max);
