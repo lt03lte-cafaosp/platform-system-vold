@@ -276,6 +276,8 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
     int minor = atoi(evt->findParam("MINOR"));
     char msg[255];
 
+    handlePartitionRemoved(devpath, evt);
+
     SLOGD("Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
     snprintf(msg, sizeof(msg), "Volume %s %s disk removed (%d:%d)",
              getLabel(), getMountpoint(), major, minor);
