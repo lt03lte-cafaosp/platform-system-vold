@@ -211,15 +211,13 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
         part_num = 1;
     }
 
-    if (emmcCard) {
-        partitionNumber = getOverrideSDPartition();
-        if (partitionNumber != part_num) {
-            return;
-       }
+    if (part_num > MAX_PARTITIONS || part_num < 1) {
+        SLOGW("Invalid 'PARTN' value");
+        part_num = 1;
     }
-    if (part_num > MAX_PARTITIONS) {
-        SLOGW("Current partition %d > 4 (Maximum partitions supported)", part_num);
-        return;
+
+    if (part_num > mDiskNumParts) {
+        mDiskNumParts = part_num;
     }
 
     if (major != mDiskMajor) {
