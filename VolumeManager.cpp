@@ -172,7 +172,11 @@ void VolumeManager::setDirtyExpire(int centisecs) {
         return;
     }
 
+    if (mUsbConnected == true) {
         snprintf(dirty_exp, sizeof(dirty_exp), "%d", centisecs);
+    } else {
+        snprintf(dirty_exp, sizeof(dirty_exp), "%d", 60000);
+    }
 
     if (write(exp_fd, dirty_exp, strlen(dirty_exp)) < 0) {
         SLOGE("Unable to write to vm dirty_expire_centisecs (%s)", strerror(errno));
@@ -192,7 +196,11 @@ void VolumeManager::setDirtyWriteback(int centisecs) {
         return;
     }
 
+    if (mUsbConnected == true) {
         snprintf(dirty_write, sizeof(dirty_write), "%d", centisecs);
+    } else {
+        snprintf(dirty_write, sizeof(dirty_write), "%d", 60000);
+    }
 
     if (write(wr_fd, dirty_write, strlen(dirty_write)) < 0) {
         SLOGE("Unable to write to vm dirty_writeback_centisecs (%s)", strerror(errno));
@@ -216,13 +224,8 @@ void VolumeManager::handleSwitchEvent(NetlinkEvent *evt) {
     if (!strcmp(name, "usb_configuration")) {
         mUsbConnected = !strcmp(state, "1");
         SLOGD("USB %s", mUsbConnected ? "connected" : "disconnected");
-        if (mUsbConnected == true) {
-            setDirtyExpire(200);
-            setDirtyWriteback(500);
-        } else {
-            setDirtyExpire(60000);
-            setDirtyWriteback(60000);
-        }
+        setDirtyExpire(200);
+        setDirtyWriteback(500);
         bool newAvailable = massStorageAvailable();
         if (newAvailable != oldAvailable) {
             notifyUmsAvailable(newAvailable);
@@ -253,10 +256,6 @@ void VolumeManager::handleUsbCompositeEvent(NetlinkEvent *evt) {
 
 void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
     const char *devpath = evt->findParam("DEVPATH");
-    const char *devtype = evt->findParam("DEVTYPE");
-    const char *devname = evt->findParam("DEVNAME");
-    int fd;
-    char path[255];
 
     /* Lookup a volume to handle this device */
     VolumeCollection::iterator it;
@@ -275,21 +274,6 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
 #ifdef NETLINK_DEBUG
         SLOGW("No volumes handled block event for '%s'", devpath);
 #endif
-    }
-    if (!strcmp(devtype, "disk") && !strncmp(devname, "sda", 2)) {
-        SLOGE("handleBlockEvent: type:%s, name:%s", devtype, devname);
-        snprintf(path, sizeof(path), "%s%s", "/sys", devpath);
-        SLOGE("handleBlockEvent: path:%s", path);
-        if((fd = open(path, O_RDONLY)) < 0) {
-            SLOGE("fd was < 0 setting 60000 fd:%d", fd);
-            setDirtyExpire(60000);
-            setDirtyWriteback(60000);
-        } else {
-            SLOGE("in else: opened file fd:%d", fd);
-            setDirtyExpire(200);
-            setDirtyWriteback(500);
-            close(fd);
-        }
     }
 }
 
