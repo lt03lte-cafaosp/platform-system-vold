@@ -129,7 +129,5 @@ private:
 
     inline bool massStorageAvailable() const { return mUsbMassStorageEnabled && mUsbConnected; }
     void notifyUmsAvailable(bool available);
-    void setDirtyWriteback(int centisecs);
-    void setDirtyExpire(int centisecs);
 };
 #endif

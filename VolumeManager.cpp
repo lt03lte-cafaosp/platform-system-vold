@@ -166,54 +166,6 @@ void VolumeManager::notifyUmsAvailable(bool available) {
                                     msg, false);
 }
 
-void VolumeManager::setDirtyExpire(int centisecs) {
-    int exp_fd;
-    char dirty_exp[10];
-    const char *expire_path = "/proc/sys/vm/dirty_expire_centisecs";
-
-    if ((exp_fd = open(expire_path, O_WRONLY)) < 0) {
-        SLOGE("Unable to open vm dirty_expire_centisecs (%s)", strerror(errno));
-        return;
-    }
-
-    if (mUsbConnected == true) {
-        snprintf(dirty_exp, sizeof(dirty_exp), "%d", centisecs);
-    } else {
-        snprintf(dirty_exp, sizeof(dirty_exp), "%d", 60000);
-    }
-
-    if (write(exp_fd, dirty_exp, strlen(dirty_exp)) < 0) {
-        SLOGE("Unable to write to vm dirty_expire_centisecs (%s)", strerror(errno));
-        close(exp_fd);
-        return;
-    }
-    close(exp_fd);
-}
-
-void VolumeManager::setDirtyWriteback(int centisecs) {
-    int wr_fd;
-    char dirty_write[10];
-    const char *writeback_path = "/proc/sys/vm/dirty_writeback_centisecs";
-
-    if ((wr_fd = open(writeback_path, O_WRONLY)) < 0) {
-        SLOGE("Unable to open vm dirty_writeback_centisecs (%s)", strerror(errno));
-        return;
-    }
-
-    if (mUsbConnected == true) {
-        snprintf(dirty_write, sizeof(dirty_write), "%d", centisecs);
-    } else {
-        snprintf(dirty_write, sizeof(dirty_write), "%d", 60000);
-    }
-
-    if (write(wr_fd, dirty_write, strlen(dirty_write)) < 0) {
-        SLOGE("Unable to write to vm dirty_writeback_centisecs (%s)", strerror(errno));
-        close(wr_fd);
-        return;
-    }
-    close(wr_fd);
-}
-
 void VolumeManager::handleSwitchEvent(NetlinkEvent *evt) {
     const char *devpath = evt->findParam("DEVPATH");
     const char *name = evt->findParam("SWITCH_NAME");
@@ -228,8 +180,6 @@ void VolumeManager::handleSwitchEvent(NetlinkEvent *evt) {
     if (!strcmp(name, "usb_configuration")) {
         mUsbConnected = !strcmp(state, "1");
         SLOGD("USB %s", mUsbConnected ? "connected" : "disconnected");
-        setDirtyExpire(200);
-        setDirtyWriteback(500);
         bool newAvailable = massStorageAvailable();
         if (newAvailable != oldAvailable) {
             notifyUmsAvailable(newAvailable);
