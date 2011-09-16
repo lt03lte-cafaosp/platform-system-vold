@@ -133,7 +133,9 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
 
     if (rc == 0 && createLost) {
         char *lost_path;
+        char *download_path;
         asprintf(&lost_path, "%s/LOST.DIR", mountPoint);
+        asprintf(&download_path, "%s/Download", mountPoint);
         if (access(lost_path, F_OK)) {
             /*
              * Create a LOST.DIR in the root so we have somewhere to put
@@ -143,7 +145,17 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
                 SLOGE("Unable to create LOST.DIR (%s)", strerror(errno));
             }
         }
+        if (access(download_path, F_OK)) {
+            /*
+             * Create a Download directory in the root so we have somewhere to put
+             * downloaded data.
+             */
+            if (mkdir(download_path, 0755)) {
+                SLOGE("Unable to create Download directory (%s)", strerror(errno));
+            }
+        }
         free(lost_path);
+        free(download_path);
     }
 
     return rc;
