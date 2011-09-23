@@ -42,6 +42,8 @@
 #include "Process.h"
 #include "Asec.h"
 
+#define USB_FUNCTIONS_PATH   "/sys/class/android_usb/android0/functions"
+
 VolumeManager *VolumeManager::sInstance = NULL;
 
 VolumeManager *VolumeManager::Instance() {
@@ -61,6 +63,35 @@ VolumeManager::VolumeManager() {
     readInitialState();
 }
 
+bool VolumeManager::function_enabled(const char *match)
+{
+    int fd;
+    bool ret;
+    char c[256];
+
+    fd = open(USB_FUNCTIONS_PATH, O_RDONLY);
+    if(fd < 0) {
+        SLOGE("Error while opening the file %s : %s \n",
+             USB_FUNCTIONS_PATH, strerror(errno));
+        return false;
+    }
+
+    if(read(fd, c, sizeof(c)) < 0) {
+        SLOGE("Error while reading the file %s : %s \n",
+             USB_FUNCTIONS_PATH, strerror(errno));
+        ret = false;
+    }
+
+    if(strstr(c, match)) {
+        ret = true;
+    } else {
+        ret = false;
+    }
+
+    close(fd);
+    return ret;
+}
+
 void VolumeManager::readInitialState() {
     FILE *fp;
     char state[255];
@@ -77,6 +108,8 @@ void VolumeManager::readInitialState() {
         fclose(fp);
     } else {
         SLOGD("USB mass storage support is not enabled in the kernel");
+        // Check if USB supports new ABI
+        mUsbMassStorageEnabled = function_enabled("mass_storage");
     }
 
     /*
@@ -87,6 +120,13 @@ void VolumeManager::readInitialState() {
             mUsbConnected = !strncmp(state, "1", 1);
         } else {
             SLOGE("Failed to read usb_configuration switch (%s)", strerror(errno));
+        }
+        fclose(fp);
+    } else if ((fp = fopen("/sys/devices/virtual/android_usb/android0/state", "r"))) {
+        if (fgets(state, sizeof(state), fp)) {
+            mUsbConnected = !strncmp(state, "CONFIGURED", sizeof(state));
+        } else {
+            SLOGE("Failed to read usb configuration state (%s)", strerror(errno));
         }
         fclose(fp);
     } else {
@@ -201,6 +241,30 @@ void VolumeManager::handleUsbCompositeEvent(NetlinkEvent *evt) {
         if (newAvailable != oldAvailable) {
             notifyUmsAvailable(newAvailable);
         }
+    }
+}
+void VolumeManager::handleAndroidUsbEvent(NetlinkEvent *evt) {
+    const char *state = evt->findParam("USB_STATE");
+
+    if (!state) {
+        SLOGW("android_usb event missing USB_STATE info");
+        return;
+    }
+
+    bool oldAvailable = massStorageAvailable();
+    if (!strcmp(state, "DISCONNECTED")) {
+        mUsbConnected = false;
+    } else if (!strcmp(state, "CONFIGURED")) {
+        mUsbConnected = true;
+    } else {
+        SLOGW("Ignoring unknown event '%s'", state);
+        return;
+    }
+    mUsbMassStorageEnabled = function_enabled("mass_storage");
+    SLOGD("usb_mass_storage function %s", mUsbMassStorageEnabled ? "enabled" : "disabled");
+    bool newAvailable = massStorageAvailable();
+    if (newAvailable != oldAvailable) {
+        notifyUmsAvailable(newAvailable);
     }
 }
 
@@ -1052,8 +1116,12 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
 
     if ((fd = open("/sys/devices/platform/usb_mass_storage/lun0/file",
                    O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
+        // Check if USB supports new ABI
+        if ((fd = open("/sys/class/android_usb/f_mass_storage/lun/file",
+                   O_WRONLY)) < 0) {
+           SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+           return -1;
+        }
     }
 
     if (write(fd, nodepath, strlen(nodepath)) < 0) {
@@ -1087,8 +1155,12 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
 
     int fd;
     if ((fd = open("/sys/devices/platform/usb_mass_storage/lun0/file", O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
+        // Check if USB supports new ABI
+        if ((fd = open("/sys/class/android_usb/f_mass_storage/lun/file",
+                                                  O_WRONLY)) < 0) {
+           SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+           return -1;
+        }
     }
 
     char ch = 0;

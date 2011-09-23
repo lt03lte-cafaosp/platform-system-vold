@@ -71,6 +71,7 @@ public:
     void handleBlockEvent(NetlinkEvent *evt);
     void handleSwitchEvent(NetlinkEvent *evt);
     void handleUsbCompositeEvent(NetlinkEvent *evt);
+    void handleAndroidUsbEvent(NetlinkEvent *evt);
 
     int addVolume(Volume *v);
 
@@ -118,6 +119,7 @@ public:
 
 private:
     VolumeManager();
+    bool function_enabled(const char *match);
     void readInitialState();
     Volume *lookupVolume(const char *label);
     bool isMountpointMounted(const char *mp);
