@@ -39,7 +39,7 @@ LOCAL_C_INCLUDES := $(common_c_includes)
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
-LOCAL_MODULE_TAGS := eng tests
+LOCAL_MODULE_TAGS := debug tests
 
 include $(BUILD_STATIC_LIBRARY)
 
