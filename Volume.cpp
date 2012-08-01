@@ -228,11 +228,17 @@ int Volume::formatVol() {
     bool formatEntireDevice = (mPartIdx == -1);
     char devicePath[255];
     dev_t diskNode = getDiskDevice();
-    dev_t partNode = MKDEV(MAJOR(diskNode), (MINOR(diskNode) + mPartIdx));
+    dev_t partNode;
+
+    if(mPartIdx == MINOR(diskNode)){
+    partNode = MKDEV(MAJOR(diskNode),(formatEntireDevice ? 1: mPartIdx));
+    }
+    else{
+    partNode = MKDEV(MAJOR(diskNode), (MINOR(diskNode) + mPartIdx));
 
 	if(mPartIdx == -1)
 		partNode = MKDEV(MAJOR(diskNode), (MINOR(diskNode) + 1));
-
+    }
     setState(Volume::State_Formatting);
 
     int ret = -1;
@@ -246,10 +252,8 @@ int Volume::formatVol() {
             goto err;
         }
     }
-
     sprintf(devicePath, "/dev/block/vold/%d:%d",
             MAJOR(partNode), MINOR(partNode));
-
     if (mDebug) {
         SLOGI("Formatting volume %s (%s)", getLabel(), devicePath);
     }
@@ -258,7 +262,6 @@ int Volume::formatVol() {
         SLOGE("Failed to format (%s)", strerror(errno));
         goto err;
     }
-
     ret = 0;
 
 err:
