@@ -63,6 +63,7 @@ VolumeManager::VolumeManager() {
     mDebug = false;
     mVolumes = new VolumeCollection();
     mActiveContainers = new AsecIdCollection();
+    mSysfsEntries = new SysfsPathCollection();
     mBroadcaster = NULL;
     mVolManagerDisabled = 0;
 }
@@ -70,6 +71,7 @@ VolumeManager::VolumeManager() {
 VolumeManager::~VolumeManager() {
     delete mVolumes;
     delete mActiveContainers;
+    delete mSysfsEntries;
 }
 
 char *VolumeManager::asecHash(const char *id, char *buffer, size_t len) {
@@ -125,6 +127,11 @@ int VolumeManager::addVolume(Volume *v) {
     return 0;
 }
 
+int VolumeManager::addSysfsPath(const char *sysfs) {
+    mSysfsEntries->push_back(strdup(sysfs));
+    return 0;
+}
+
 void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
     const char *devpath = evt->findParam("DEVPATH");
 
@@ -136,15 +143,63 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
 #ifdef NETLINK_DEBUG
             SLOGD("Device '%s' event handled by volume %s\n", devpath, (*it)->getLabel());
 #endif
+            if(evt->getAction() == VolumeManager::REMEVENT) {
+                //removal event is detected. Remove Volume from the list
+                if (((*it)->getState() == Volume::State_NoMedia)) {
+                    SLOGI("External Volume %s is removed from the list", (*it)->getLabel());
+                    free(*it);
+                    mVolumes->erase(it);
+                }
+            }
+            SLOGD("removal event detected");
             hit = true;
             break;
         }
     }
 
     if (!hit) {
+        // Checking for any block device is added or not
+        SysfsPathCollection::iterator it;
+        DirectVolume *dv = NULL;
+        VolumeManager *vm = VolumeManager::Instance();
+        char *uid;
+        char label[10], mountPoint[25], cmd[50];
+        for (it = mSysfsEntries->begin(); it != mSysfsEntries->end(); ++it) {
+            if (!strncmp(devpath, *it, strlen(*it)) && !strncmp(evt->findParam("DEVTYPE"), "disk", strlen("disk"))) {
+                if (evt->getAction() != VolumeManager::REMEVENT) {
+                    // External Volume insertion is detected. Add new Volume here. >> FIX ME: Use Macro
+                    int part = atoi(evt->findParam("NPARTS"));
+                    char *uid = Volume::generateUID(evt->findParam("DEVNAME"));
+                    snprintf(label, sizeof(label), "Disk_%s", uid);
+                    snprintf(mountPoint, sizeof(mountPoint), "%s/%s",Volume::REMDIR, label);
+                    dv = new DirectVolume(vm, label, mountPoint, -1);
+                    dv->addPath(devpath);
+                    dv->setFlags(0);
+                    vm->addVolume(dv);
+                    //Create Folder for each partition
+                    for(int i = part; i > 0; i--) {
+                        char partnMntPoint[25];
+                        snprintf(partnMntPoint, sizeof(partnMntPoint), "%s/%d", dv->getMountpoint(), i);
+                        snprintf(cmd, sizeof(cmd), "mkdir -p %s", partnMntPoint);
+                        SLOGE("cmd is %s", cmd);
+                        system(cmd);
+                    }
+                    //Give full permission to the root directory of the disk
+                    snprintf(cmd, sizeof(cmd), "chmod 777 %s", dv->getMountpoint());
+                    system(cmd);
+                    // Handle the detected device
+                    dv->handleBlockEvent(evt);
+                    hit = true;
+                    delete uid;
+                    break;
+                }
+            }
+        }
+        if(!hit) {
 #ifdef NETLINK_DEBUG
-        SLOGW("No volumes handled block event for '%s'", devpath);
+            SLOGW("No volumes handled block event for '%s'", devpath);
 #endif
+        }
     }
 }
 
@@ -156,6 +211,16 @@ int VolumeManager::listVolumes(SocketClient *cli) {
         asprintf(&buffer, "%s %s %d",
                  (*i)->getLabel(), (*i)->getMountpoint(),
                  (*i)->getState());
+        // If USB Disk is already connected at boot-up the first send the insert message to avoid Media Crash at unmounting.
+        if (!strncmp((*i)->getMountpoint(), Volume::REMDIR, strlen(Volume::REMDIR))) {
+            char exMsg[500];
+            /* hash broadcast
+             * Ex <mountPoint> inserted <description> <removable> <emulated> <mtpReserve> <allowMassStorage> <maxFileSize>
+             */
+            snprintf(exMsg, sizeof(exMsg), "Ex %s inserted %s %s %d %d %s %ld", (*i)->getMountpoint(), (*i)->getLabel(),
+                    "true", 1, 100, "true", (1024*1024*2l));
+            sInstance->getBroadcaster()->sendBroadcast(ResponseCode::NewExternalDevice, exMsg, false);
+        }
         cli->sendMsg(ResponseCode::VolumeListResult, buffer, false);
         free(buffer);
     }

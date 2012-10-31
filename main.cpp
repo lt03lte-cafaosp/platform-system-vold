@@ -204,35 +204,46 @@ static int process_config(VolumeManager *vm) {
                 SLOGE("Partition must either be 'auto' or 1 based index instead of '%s'", part);
                 goto out_syntax;
             }
-
-            if (!strcmp(part, "auto")) {
-                dv = new DirectVolume(vm, label, mount_point, -1);
+            if (!strcmp(label, "external")) {
+                while ((sysfs_path = strtok_r(NULL, delim, &save_ptr))) {
+                    if (*sysfs_path != '/') {
+                        /* If the first character is not a '/', it must be flags */
+                        break;
+                    }
+                    if (vm->addSysfsPath(sysfs_path)) {
+                        SLOGE("Failed to add devpath %s to volume %s", sysfs_path, label);
+                        goto out_fail;
+                    }
+                }
             } else {
-                dv = new DirectVolume(vm, label, mount_point, atoi(part));
-            }
-
-            while ((sysfs_path = strtok_r(NULL, delim, &save_ptr))) {
-                if (*sysfs_path != '/') {
-                    /* If the first character is not a '/', it must be flags */
-                    break;
+                if (!strcmp(part, "auto")) {
+                    dv = new DirectVolume(vm, label, mount_point, -1);
+                } else {
+                    dv = new DirectVolume(vm, label, mount_point, atoi(part));
                 }
-                if (dv->addPath(sysfs_path)) {
-                    SLOGE("Failed to add devpath %s to volume %s", sysfs_path,
-                         label);
-                    goto out_fail;
+
+                while ((sysfs_path = strtok_r(NULL, delim, &save_ptr))) {
+                    if (*sysfs_path != '/') {
+                        /* If the first character is not a '/', it must be flags */
+                        break;
+                    }
+                    if (dv->addPath(sysfs_path)) {
+                        SLOGE("Failed to add devpath %s to volume %s", sysfs_path, label);
+                        goto out_fail;
+                    }
                 }
+
+                /* If sysfs_path is non-null at this point, then it contains
+                 * the optional flags for this volume
+                 */
+                if (sysfs_path)
+                    flags = parse_mount_flags(sysfs_path);
+                else
+                    flags = 0;
+                dv->setFlags(flags);
+
+                vm->addVolume(dv);
             }
-
-            /* If sysfs_path is non-null at this point, then it contains
-             * the optional flags for this volume
-             */
-            if (sysfs_path)
-                flags = parse_mount_flags(sysfs_path);
-            else
-                flags = 0;
-            dv->setFlags(flags);
-
-            vm->addVolume(dv);
         } else if (!strcmp(type, "map_mount")) {
         } else {
             SLOGE("Unknown type '%s'", type);

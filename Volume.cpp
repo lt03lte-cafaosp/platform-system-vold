@@ -87,6 +87,11 @@ const char *Volume::ASECDIR           = "/mnt/asec";
  */
 const char *Volume::LOOPDIR           = "/mnt/obb";
 
+/*
+ * Path to where removable deives are mounted
+ */
+const char *Volume::REMDIR            = "/storage/usb";
+
 static const char *stateToStr(int state) {
     if (state == Volume::State_Init)
         return "Initializing";
@@ -299,6 +304,7 @@ int Volume::mountVol() {
     char crypto_state[PROPERTY_VALUE_MAX];
     char encrypt_progress[PROPERTY_VALUE_MAX];
     int flags;
+    char mountPoint[255];
 
     property_get("vold.decrypt", decrypt_state, "");
     property_get("vold.encrypt_progress", encrypt_progress, "");
@@ -447,21 +453,60 @@ int Volume::mountVol() {
          * Now that the bindmount trickery is done, atomically move the
          * whole subtree to expose it to non priviledged users.
          */
-        if (doMoveMount("/mnt/secure/staging", getMountpoint(), false)) {
+        if (!strncmp(getMountpoint(), Volume::REMDIR, strlen(Volume::REMDIR))) {
+            snprintf(mountPoint, sizeof(mountPoint), "%s/%d", getMountpoint(), i+1);
+        } else {
+            snprintf(mountPoint, sizeof(mountPoint), "%s", getMountpoint());
+        }
+        if (doMoveMount("/mnt/secure/staging", mountPoint, false)) {
             SLOGE("Failed to move mount (%s)", strerror(errno));
             umount("/mnt/secure/staging");
             setState(Volume::State_Idle);
             return -1;
         }
-        setState(Volume::State_Mounted);
         mCurrentlyMountedKdev = deviceNodes[i];
-        return 0;
+        // Only return when sdcard mount is happening, otherwise mount all other partitions for USB Disk
+        if (strncmp(getMountpoint(), Volume::REMDIR, strlen(Volume::REMDIR))) {
+            setState(Volume::State_Mounted);
+            return 0;
+        } else if (i+1 == n) {
+            setState(Volume::State_Mounted);
+            return 0;
+        } else {
+            setState(Volume::State_Pending);
+        }
     }
 
     SLOGE("Volume %s found no suitable devices for mounting :(\n", getLabel());
     setState(Volume::State_Idle);
 
     return -1;
+}
+
+char *Volume::generateUID(const char *devName) {
+    char buf[255], buf2[255], name[255];
+    char *p;
+    int j, f, len;
+    const int UIDSIZE = 5;
+    const int SUBDIR = 6;
+    snprintf(name, sizeof(name), "/sys/block/%s", devName);
+    len = readlink(name, buf, sizeof(buf));
+    sprintf(buf2, "%s/%s", "/sys/block/", buf);
+    for (j = 0; j < SUBDIR; j++) {
+        p = strrchr(buf2, '/');
+        *p = 0;
+    }
+    strncat(buf2, "/serial", strlen("/serial"));
+    f = open(buf2, 0);
+    len = read(f, buf, sizeof(buf));
+    if (len <= 0)
+        SLOGE("Error getting UID of the Device.");
+    buf[len] = '\0';
+    char *uid = new char[UIDSIZE];
+    strncpy(uid, buf + (len - UIDSIZE), UIDSIZE-1);
+    uid[UIDSIZE-1] = '\0';
+    SLOGD("UID of the Device is = %s", uid);
+    return uid;
 }
 
 int Volume::createBindMounts() {
@@ -597,6 +642,8 @@ int Volume::doUnmount(const char *path, bool force) {
 
 int Volume::unmountVol(bool force, bool revert) {
     int i, rc;
+    bool isLastPart = false;
+    char mntPnt[255];
 
     if (getState() != Volume::State_Mounted) {
         SLOGE("Volume %s unmount request when not mounted", getLabel());
@@ -608,13 +655,35 @@ int Volume::unmountVol(bool force, bool revert) {
     usleep(1000 * 1000); // Give the framework some time to react
 
     /*
+     * Get the mount point to unmount the partition
+     */
+    if(!strncmp(getMountpoint(), Volume::REMDIR, strlen(Volume::REMDIR)) && partCount > 0) {
+        // Setting mount point for USB Device Removal
+        SLOGI("External device unmount received");
+        snprintf(mntPnt, sizeof(mntPnt), "%s/%d", getMountpoint(), partCount--);
+        if(!partCount) {
+            isLastPart = true;
+        }
+    } else {
+        // setting mount point for SD-Card Removal
+        isLastPart = true;
+        snprintf(mntPnt, sizeof(mntPnt), "%s", getMountpoint());
+    }
+    SLOGI("Unmount Volume Mount Point %s", mntPnt);
+    /*
      * First move the mountpoint back to our internal staging point
      * so nobody else can muck with it while we work.
      */
-    if (doMoveMount(getMountpoint(), SEC_STGDIR, force)) {
+    if (doMoveMount(mntPnt, SEC_STGDIR, force)) {
         SLOGE("Failed to move mount %s => %s (%s)", getMountpoint(), SEC_STGDIR, strerror(errno));
         setState(Volume::State_Mounted);
         return -1;
+    } else {
+        if (!strncmp(getMountpoint(), Volume::REMDIR, strlen(Volume::REMDIR))) {
+            char cmd[255];
+            snprintf(cmd, sizeof(cmd), "rm -r %s", mntPnt);
+            system(cmd);
+        }
     }
 
     protectFromAutorunStupidity();
@@ -659,8 +728,17 @@ int Volume::unmountVol(bool force, bool revert) {
         SLOGI("Encrypted volume %s reverted successfully", getMountpoint());
     }
 
-    setState(Volume::State_Idle);
-    mCurrentlyMountedKdev = -1;
+    /*
+     * Do not change state to idle right now - wait for all partitions are unmounted
+     */
+    if(!isLastPart) {
+        setState(Volume::State_Pending);
+        mCurrentlyMountedKdev--;
+    } else {
+        setState(Volume::State_Idle);
+        mCurrentlyMountedKdev = -1;
+    }
+
     return 0;
 
     /*

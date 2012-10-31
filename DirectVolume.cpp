@@ -41,11 +41,20 @@ DirectVolume::DirectVolume(VolumeManager *vm, const char *label,
     mPaths = new PathCollection();
     for (int i = 0; i < MAX_PARTITIONS; i++)
         mPartMinors[i] = -1;
-    mPendingPartMap = 0;
+    mPendingPartMap = mPendingPartMapDup = 0;
     mDiskMajor = -1;
     mDiskMinor = -1;
     mDiskNumParts = 0;
 
+    if(!strncmp(mount_point, Volume::REMDIR, strlen(Volume::REMDIR))) {
+        char exMsg[500];
+        /* hash broadcast
+         * Ex <mountPoint> inserted <description> <removable> <emulated> <mtpReserve> <allowMassStorage> <maxFileSize>
+         */
+        snprintf(exMsg, sizeof(exMsg), "Ex %s inserted %s %s %d %d %s %ld", mount_point, label,
+                "true", 1, 100, "true", (1024*1024*2l));
+        mVm->getBroadcaster()->sendBroadcast(ResponseCode::NewExternalDevice, exMsg, false);
+    }
     setState(Volume::State_NoMedia);
 }
 
@@ -148,6 +157,7 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
         mDiskNumParts = 1;
     }
 
+    setNumParts(mDiskNumParts);
     char msg[255];
 
     int partmask = 0;
@@ -155,7 +165,7 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
     for (i = 1; i <= mDiskNumParts; i++) {
         partmask |= (1 << i);
     }
-    mPendingPartMap = partmask;
+    mPendingPartMap = mPendingPartMapDup = partmask;
 
     if (mDiskNumParts == 0) {
 #ifdef PARTITION_DEBUG
@@ -279,9 +289,18 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
     SLOGD("Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
     snprintf(msg, sizeof(msg), "Volume %s %s disk removed (%d:%d)",
              getLabel(), getMountpoint(), major, minor);
-    mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskRemoved,
-                                             msg, false);
-    setState(Volume::State_NoMedia);
+    if(mPendingPartMapDup == 0) {
+        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskRemoved, msg, false);
+        setState(Volume::State_NoMedia);
+        if (!strncmp(getMountpoint(), Volume::REMDIR, strlen(Volume::REMDIR))) {
+            /* hash broadcast
+             * Ex <mountPoint> removed <description> <removable> <emulated> <mtpReserve> <allowMassStorage> <maxFileSize>
+             */
+            snprintf(msg,sizeof(msg), "Ex %s removed %s %s %d %d %s %ld",getMountpoint(),
+                    "external","true",1,100,"true",(1024*1024*2l));
+            mVm->getBroadcaster()->sendBroadcast(ResponseCode::ExternalDeviceRemoved,msg,false);
+        }
+    }
 }
 
 void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt) {
@@ -289,6 +308,7 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
     int minor = atoi(evt->findParam("MINOR"));
     char msg[255];
     int state;
+    int part_num = atoi(evt->findParam("PARTN"));
 
     SLOGD("Volume %s %s partition %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
 
@@ -299,10 +319,13 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
      * itself
      */
     state = getState();
-    if (state != Volume::State_Mounted && state != Volume::State_Shared) {
+    if (state != Volume::State_Mounted && state != Volume::State_Shared && strncmp(getMountpoint(),
+                Volume::REMDIR, strlen(Volume::REMDIR))) {
         return;
     }
-        
+
+    setState(Volume::State_Mounted);
+    SLOGD("Currently mounted Kdev=%d", mCurrentlyMountedKdev);
     if ((dev_t) MKDEV(major, minor) == mCurrentlyMountedKdev) {
         /*
          * Yikes, our mounted partition is going away!
@@ -310,8 +333,6 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
 
         snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
                  getLabel(), getMountpoint(), major, minor);
-        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
-                                             msg, false);
 
 	if (mVm->cleanupAsec(this, true)) {
             SLOGE("Failed to cleanup ASEC - unmount will probably fail!");
@@ -322,7 +343,11 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
                  strerror(errno));
             // XXX: At this point we're screwed for now
         } else {
-            SLOGD("Crisis averted");
+            if (!strncmp(getMountpoint(), Volume::REMDIR, strlen(Volume::REMDIR))) {
+                mPendingPartMapDup &= ~(1 << part_num);
+            } else {
+                SLOGD("Crisis averted");
+            }
         }
     } else if (state == Volume::State_Shared) {
         /* removed during mass storage */
