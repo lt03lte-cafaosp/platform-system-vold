@@ -40,6 +40,7 @@ protected:
     unsigned char  mPendingPartMap;
     int            mIsDecrypted;
     int            mFlags;
+    unsigned char  mPendingPartMapDup;
 
 public:
     DirectVolume(VolumeManager *vm, const char *label, const char *mount_point, int partIdx);

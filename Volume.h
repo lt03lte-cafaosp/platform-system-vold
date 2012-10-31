@@ -25,6 +25,7 @@ class VolumeManager;
 class Volume {
 private:
     int mState;
+    int numParts;
 
 public:
     static const int State_Init       = -1;
@@ -46,6 +47,7 @@ public:
     static const char *ASECDIR;
 
     static const char *LOOPDIR;
+    static const char *REMDIR;
 
 protected:
     char *mLabel;
@@ -55,6 +57,7 @@ protected:
     int mPartIdx;
     int mOrigPartIdx;
     bool mRetryMount;
+    int partCount;
 
     /*
      * The major/minor tuple of the currently mounted filesystem.
@@ -81,6 +84,10 @@ public:
 
     void setDebug(bool enable);
     virtual int getVolInfo(struct volume_info *v) = 0;
+
+    void setNumParts(int num) { numParts = num; partCount = num; }
+    int getNumParts() { return numParts; }
+    static char *generateUID(const char* devName);
 
 protected:
     void setState(int state);
