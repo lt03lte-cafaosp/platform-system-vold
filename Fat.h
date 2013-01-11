@@ -17,6 +17,10 @@
 #ifndef _FAT_H
 #define _FAT_H
 
+#ifndef LOGE
+#define LOGE(T, M) ALOGE(T, M)
+#endif
+
 #include <unistd.h>
 
 class Fat {
