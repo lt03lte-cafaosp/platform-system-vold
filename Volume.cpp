@@ -305,6 +305,7 @@ int Volume::mountVol() {
     char encrypt_progress[PROPERTY_VALUE_MAX];
     int flags;
     char mountPoint[255];
+    bool isPartAvail = false;
 
     property_get("vold.decrypt", decrypt_state, "");
     property_get("vold.encrypt_progress", encrypt_progress, "");
@@ -394,7 +395,7 @@ int Volume::mountVol() {
     }
 
     for (i = 0; i < n; i++) {
-        char devicePath[255];
+        char devicePath[255], cmd[50];
 
         sprintf(devicePath, "/dev/block/vold/%d:%d", MAJOR(deviceNodes[i]),
                 MINOR(deviceNodes[i]));
@@ -412,8 +413,7 @@ int Volume::mountVol() {
             errno = EIO;
             /* Badness - abort the mount */
             SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
-            setState(Volume::State_Idle);
-            return -1;
+            continue;
         }
 
         /*
@@ -445,8 +445,7 @@ int Volume::mountVol() {
         if (primaryStorage && createBindMounts()) {
             SLOGE("Failed to create bindmounts (%s)", strerror(errno));
             umount("/mnt/secure/staging");
-            setState(Volume::State_Idle);
-            return -1;
+            continue;
         }
 
         /*
@@ -455,15 +454,20 @@ int Volume::mountVol() {
          */
         if (!strncmp(getMountpoint(), Volume::REMDIR, strlen(Volume::REMDIR))) {
             snprintf(mountPoint, sizeof(mountPoint), "%s/%d", getMountpoint(), i+1);
+            // Create mount folder & set the permission
+            snprintf(cmd, sizeof(cmd), "mkdir -p %s", mountPoint);
+            system(cmd);
+            snprintf(cmd, sizeof(cmd), "chmod 777 %s", getMountpoint());
+            system(cmd);
         } else {
             snprintf(mountPoint, sizeof(mountPoint), "%s", getMountpoint());
         }
         if (doMoveMount("/mnt/secure/staging", mountPoint, false)) {
             SLOGE("Failed to move mount (%s)", strerror(errno));
             umount("/mnt/secure/staging");
-            setState(Volume::State_Idle);
-            return -1;
+            continue;
         }
+        isPartAvail = true;
         mCurrentlyMountedKdev = deviceNodes[i];
         // Only return when sdcard mount is happening, otherwise mount all other partitions for USB Disk
         if (strncmp(getMountpoint(), Volume::REMDIR, strlen(Volume::REMDIR))) {
@@ -472,15 +476,17 @@ int Volume::mountVol() {
         } else if (i+1 == n) {
             setState(Volume::State_Mounted);
             return 0;
-        } else {
-            setState(Volume::State_Pending);
         }
     }
 
-    SLOGE("Volume %s found no suitable devices for mounting :(\n", getLabel());
-    setState(Volume::State_Idle);
-
-    return -1;
+    if(!isPartAvail) {
+        SLOGE("Volume %s found no suitable devices for mounting :(\n", getLabel());
+        setState(Volume::State_Idle);
+        return -1;
+    } else {
+        setState(Volume::State_Mounted);
+        return 0;
+    }
 }
 
 char *Volume::generateUID(const char *devName) {
@@ -645,7 +651,8 @@ int Volume::unmountVol(bool force, bool revert) {
     bool isLastPart = false;
     char mntPnt[255];
 
-    if (getState() != Volume::State_Mounted) {
+    if (getState() != Volume::State_Mounted && strncmp(getMountpoint(), Volume::REMDIR,
+                strlen(Volume::REMDIR))) {
         SLOGE("Volume %s unmount request when not mounted", getLabel());
         errno = EINVAL;
         return UNMOUNT_NOT_MOUNTED_ERR;
@@ -732,7 +739,6 @@ int Volume::unmountVol(bool force, bool revert) {
      * Do not change state to idle right now - wait for all partitions are unmounted
      */
     if(!isLastPart) {
-        setState(Volume::State_Pending);
         mCurrentlyMountedKdev--;
     } else {
         setState(Volume::State_Idle);

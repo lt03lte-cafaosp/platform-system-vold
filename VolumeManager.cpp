@@ -143,15 +143,15 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
 #ifdef NETLINK_DEBUG
             SLOGD("Device '%s' event handled by volume %s\n", devpath, (*it)->getLabel());
 #endif
-            if(evt->getAction() == VolumeManager::REMEVENT) {
+            if(evt->getAction() == NetlinkEvent::NlActionRemove) {
                 //removal event is detected. Remove Volume from the list
+                SLOGD("removal event detected");
                 if (((*it)->getState() == Volume::State_NoMedia)) {
                     SLOGI("External Volume %s is removed from the list", (*it)->getLabel());
                     free(*it);
                     mVolumes->erase(it);
                 }
             }
-            SLOGD("removal event detected");
             hit = true;
             break;
         }
@@ -166,8 +166,8 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
         char label[10], mountPoint[25], cmd[50];
         for (it = mSysfsEntries->begin(); it != mSysfsEntries->end(); ++it) {
             if (!strncmp(devpath, *it, strlen(*it)) && !strncmp(evt->findParam("DEVTYPE"), "disk", strlen("disk"))) {
-                if (evt->getAction() != VolumeManager::REMEVENT) {
-                    // External Volume insertion is detected. Add new Volume here. >> FIX ME: Use Macro
+                if (evt->getAction() != NetlinkEvent::NlActionRemove) {
+                    // External Volume insertion is detected. Add new Volume here.
                     int part = atoi(evt->findParam("NPARTS"));
                     char *uid = Volume::generateUID(evt->findParam("DEVNAME"));
                     snprintf(label, sizeof(label), "Disk_%s", uid);
@@ -176,17 +176,6 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
                     dv->addPath(devpath);
                     dv->setFlags(0);
                     vm->addVolume(dv);
-                    //Create Folder for each partition
-                    for(int i = part; i > 0; i--) {
-                        char partnMntPoint[25];
-                        snprintf(partnMntPoint, sizeof(partnMntPoint), "%s/%d", dv->getMountpoint(), i);
-                        snprintf(cmd, sizeof(cmd), "mkdir -p %s", partnMntPoint);
-                        SLOGE("cmd is %s", cmd);
-                        system(cmd);
-                    }
-                    //Give full permission to the root directory of the disk
-                    snprintf(cmd, sizeof(cmd), "chmod 777 %s", dv->getMountpoint());
-                    system(cmd);
                     // Handle the detected device
                     dv->handleBlockEvent(evt);
                     hit = true;

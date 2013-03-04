@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/stat.h>
 
 #include <linux/kdev_t.h>
 
@@ -296,8 +297,8 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
             /* hash broadcast
              * Ex <mountPoint> removed <description> <removable> <emulated> <mtpReserve> <allowMassStorage> <maxFileSize>
              */
-            snprintf(msg,sizeof(msg), "Ex %s removed %s %s %d %d %s %ld",getMountpoint(),
-                    "external","true",1,100,"true",(1024*1024*2l));
+            snprintf(msg,sizeof(msg), "Ex %s removed %s %s %d %d %s %ld", getMountpoint(),
+                    "external", "true", 1, 100, "true", (1024*1024*2l));
             mVm->getBroadcaster()->sendBroadcast(ResponseCode::ExternalDeviceRemoved,msg,false);
         }
     }
@@ -309,7 +310,19 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
     char msg[255];
     int state;
     int part_num = atoi(evt->findParam("PARTN"));
+    struct stat statbuf;
 
+    // For USB Auto-Mount, check if the partition mount directory is there or not
+    if (!strncmp(getMountpoint(), Volume::REMDIR, strlen(Volume::REMDIR))) {
+        char partnMntPoint[25];
+        snprintf(partnMntPoint, sizeof(partnMntPoint), "%s/%d", getMountpoint(), part_num);
+        if (stat(partnMntPoint, &statbuf) != 0) {
+                SLOGI("Not valid partition to unmount.");
+                partCount--;
+                mPendingPartMapDup &= ~(1 << part_num);
+                return;
+        }
+    }
     SLOGD("Volume %s %s partition %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
 
     /*
@@ -324,7 +337,6 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
         return;
     }
 
-    setState(Volume::State_Mounted);
     SLOGD("Currently mounted Kdev=%d", mCurrentlyMountedKdev);
     if ((dev_t) MKDEV(major, minor) == mCurrentlyMountedKdev) {
         /*

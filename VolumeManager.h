@@ -139,8 +139,6 @@ public:
     int getDirectVolumeList(struct volume_info *vol_list);
     int unmountAllAsecsInDir(const char *directory);
 
-    static const int REMEVENT = 2;
-
 private:
     VolumeManager();
     void readInitialState();
