@@ -26,7 +26,6 @@ class Volume {
 private:
     int mState;
     int numParts;
-    int partCount;
 
 public:
     static const int State_Init       = -1;
@@ -58,6 +57,7 @@ protected:
     int mPartIdx;
     int mOrigPartIdx;
     bool mRetryMount;
+    int partCount;
 
     /*
      * The major/minor tuple of the currently mounted filesystem.
