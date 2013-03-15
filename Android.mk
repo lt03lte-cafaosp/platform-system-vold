@@ -23,12 +23,18 @@ common_c_includes := \
 	system/extras/ext4_utils \
 	external/openssl/include
 
+CONFIG_MMC_DISK_ENCRYPTION = true
+
 common_shared_libraries := \
 	libsysutils \
 	libcutils \
 	libdiskconfig \
 	libhardware_legacy \
-	libcrypto
+	libcrypto \
+
+ifdef CONFIG_MMC_DISK_ENCRYPTION
+common_shared_libraries += libdl
+endif
 
 include $(CLEAR_VARS)
 
