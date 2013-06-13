@@ -19,7 +19,6 @@
  *       goes horribly wrong?
  *
  */
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -46,6 +45,14 @@
 #include "cutils/properties.h"
 #include "hardware_legacy/power.h"
 #include "VolumeManager.h"
+#ifdef CONFIG_MMC_DISK_ENCRYPTION
+#include <sys/limits.h>
+#include <linux/hdreg.h>
+#include <dlfcn.h>
+#define QSEECOM_DISK_ENCRYPTION 1
+#define DISK_ENCRYPTION_IN_PROGRESS 1
+#define DISK_ENCRYPTION_COMPLETED_SUCCESS 2
+#endif
 
 #define DM_CRYPT_BUF_SIZE 4096
 #define DATA_MNT_POINT "/data"
@@ -69,6 +76,30 @@ static char *saved_mount_point;
 static int  master_key_saved = 0;
 #define FSTAB_PREFIX "/fstab."
 static char fstab_filename[PROPERTY_VALUE_MAX + sizeof(FSTAB_PREFIX)];
+
+#ifdef CONFIG_MMC_DISK_ENCRYPTION
+static int (*qseecom_create_key)(int, void*);
+
+static int load_qseecom_library()
+{
+    int rc = 0;
+    char *error;
+    void * handle = dlopen("/vendor/lib/libQSEEComAPI.so", RTLD_NOW);
+    if(handle) {
+        *(void **) (&qseecom_create_key) = dlsym(handle,"QSEECom_create_key");
+
+        if ((error = dlerror()) != NULL)  {
+            SLOGE("Error %s loading symbols for QSEECom_create_key()\n", error);
+            rc = 0;
+        } else {
+            rc = 1;
+        }
+    } else {
+        SLOGE("Could not load libQSEEComAPI.so \n");
+    }
+    return rc;
+}
+#endif
 
 static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, unsigned flags)
 {
@@ -138,6 +169,55 @@ static char *get_fstab_filename(void)
 
     return fstab_filename;
 }
+
+#ifdef CONFIG_MMC_DISK_ENCRYPTION
+/* Get the starting sector of the block partition */
+static unsigned long get_blkdev_start_position(unsigned int fd)
+{
+    struct hd_geometry  geometry;
+    unsigned long start_sec = 0;
+
+    if(!ioctl(fd, HDIO_GETGEO, &geometry))
+        start_sec = geometry.start;
+
+    return start_sec;
+}
+
+static int set_encryption_state(int value)
+{
+    char cmdline[64];
+    int rc = 1;
+
+    snprintf(cmdline, sizeof(cmdline),
+                      "echo %d > /sys/block/mmcblk0/encryption_state", value);
+    if(system(cmdline)) {
+        SLOGE("%s Error: Could not set encryption state\n",__func__);
+        rc = 0;
+    }
+
+    return rc;
+}
+
+static int set_crypto_info(unsigned long start_sec, unsigned long fs_size_sec)
+{
+    char cmdline[512], crypto_info[256];
+    int rc = 0;
+
+    /* Check for the integer overflow */
+    if((start_sec + fs_size_sec) < LONG_MAX) {
+        snprintf(crypto_info, sizeof(crypto_info), "%lu - %lu", start_sec,
+                                                  start_sec + fs_size_sec);
+        snprintf(cmdline, sizeof(cmdline),
+                          "echo %s > /sys/block/mmcblk0/crypto_info",
+                          crypto_info);
+        if(!system(cmdline))
+            rc = 1;
+        else
+            SLOGE("Error storing crypto information\n");
+    }
+    return rc;
+}
+#endif
 
 /* key or salt can be NULL, in which case just skip writing that value.  Useful to
  * update the failed mount count but not change the key.
@@ -788,6 +868,10 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
   unsigned int orig_failed_decrypt_count;
   char encrypted_state[PROPERTY_VALUE_MAX];
   int rc;
+#ifdef CONFIG_MMC_DISK_ENCRYPTION
+  int fd;
+  unsigned long start_sec;
+#endif
 
   property_get("ro.crypto.state", encrypted_state, "");
   if ( master_key_saved || strcmp(encrypted_state, "encrypted") ) {
@@ -809,6 +893,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
     decrypt_master_key(passwd, salt, encrypted_master_key, decrypted_master_key);
   }
 
+#ifndef CONFIG_MMC_DISK_ENCRYPTION
   if (create_crypto_blk_dev(&crypt_ftr, decrypted_master_key,
                                real_blkdev, crypto_blkdev, label)) {
     SLOGE("Error creating decrypted block device\n");
@@ -859,6 +944,45 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
     master_key_saved = 1;
     rc = 0;
   }
+#else
+    property_set("ro.crypto.fs_crypto_blkdev", real_blkdev);
+    /* Also save a the master key so we can reencrypted the key
+     * the key when we want to change the password on it.
+     */
+    memcpy(saved_master_key, decrypted_master_key, KEY_LEN_BYTES);
+    master_key_saved = 1;
+
+    saved_data_blkdev = strdup(real_blkdev);
+    saved_mount_point = strdup(mount_point);
+    if( !saved_data_blkdev || !saved_mount_point) {
+        SLOGE("%s Memory allocation failed for blkdev or mount point\n", __func__);
+        return -1;
+    }
+
+    if ((fd = open(real_blkdev, O_RDONLY)) == -1) {
+        SLOGE("%s could not open file = %s for READ\n", __func__, real_blkdev);
+        return -1;
+    }
+
+    /* Get the starting position of the real block device */
+    if ((start_sec = get_blkdev_start_position(fd)) == 0) {
+        SLOGE("Cannot get the starting position of block device %s\n", real_blkdev);
+        return -1;
+    }
+
+    if(!set_crypto_info(start_sec, crypt_ftr.fs_size)) {
+        SLOGE("Could not set crypto information \n");
+        return -1;
+    }
+
+    rc = -1;
+    if(load_qseecom_library()) {
+        if(!(*qseecom_create_key)(QSEECOM_DISK_ENCRYPTION, NULL)) {
+            if(set_encryption_state(DISK_ENCRYPTION_COMPLETED_SUCCESS))
+                rc = 0;
+        }
+    }
+#endif
 
   return rc;
 }
@@ -1041,6 +1165,8 @@ static inline int unix_write(int  fd, const void*  buff, int  len)
     return ret;
 }
 
+#ifndef CONFIG_MMC_DISK_ENCRYPTION
+
 #define CRYPT_INPLACE_BUFSIZE 4096
 #define CRYPT_SECTORS_PER_BUFSIZE (CRYPT_INPLACE_BUFSIZE / 512)
 static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_t size,
@@ -1120,6 +1246,116 @@ errout:
     return rc;
 }
 
+#else
+
+#define CRYPT_INPLACE_BUFSIZE 32768
+#define CRYPT_SECTORS_PER_BUFSIZE (CRYPT_INPLACE_BUFSIZE / 512)
+static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_t size,
+                                  off64_t *size_already_done, off64_t tot_size)
+{
+    int realfd, cryptofd;
+    char *buf[CRYPT_INPLACE_BUFSIZE];
+    int rc = -1;
+    off64_t numblocks, i, remainder;
+    off64_t one_pct, cur_pct, new_pct;
+    off64_t blocks_already_done, tot_numblocks;
+    off64_t readPos;
+
+    if ( (realfd = open(real_blkdev, O_RDWR)) < 0) {
+        SLOGE("Error opening real_blkdev %s for inplace encrypt\n", real_blkdev);
+        return -1;
+    }
+
+    /* This is pretty much a simple loop of reading 32K, and writing 32K.
+     * The size passed in is the number of 512 byte sectors in the filesystem.
+     * So compute the number of whole 32K blocks we should read/write,
+     * and the remainder.
+     */
+    numblocks = size / CRYPT_SECTORS_PER_BUFSIZE;
+    remainder = size % CRYPT_SECTORS_PER_BUFSIZE;
+    tot_numblocks = tot_size / CRYPT_SECTORS_PER_BUFSIZE;
+    blocks_already_done = *size_already_done / CRYPT_SECTORS_PER_BUFSIZE;
+
+    SLOGE("Encrypting filesystem in place...");
+
+    one_pct = tot_numblocks / 100;
+    cur_pct = 0;
+    /* process the majority of the filesystem in blocks */
+    for (i=0; i<numblocks; i++) {
+        new_pct = (i + blocks_already_done) / one_pct;
+        if (new_pct > cur_pct) {
+            char buf[8];
+
+            cur_pct = new_pct;
+            snprintf(buf, sizeof(buf), "%lld", cur_pct);
+            property_set("vold.encrypt_progress", buf);
+        }
+
+        /* After every read position would change to number of bytes read.
+         * Since we need to read and write at the same position, we would
+         * record the position before read and rewind back before write
+         * Since encryption flag has been enabled in the cryptfs_enable(),
+         * all read would be plain but all write would encrypted so that
+         * at the end of this function, whole partition would be encrypted
+         */
+        readPos = lseek64(realfd, 0 , SEEK_CUR);
+        if(readPos < 0) {
+            SLOGE("Error = %d seeking real_blkdev %s for inplace encrypt\n", errno, real_blkdev);
+            goto errout;
+        }
+
+        if (unix_read(realfd, buf, CRYPT_INPLACE_BUFSIZE) <= 0) {
+            SLOGE("Error =%d reading real_blkdev %s for inplace encrypt\n", errno, real_blkdev);
+            goto errout;
+        }
+
+        readPos = lseek64(realfd, readPos, SEEK_SET);
+        if(readPos < 0) {
+            SLOGE("Error = %d seeking crypto_blkdev %s for inplace encrypt\n", errno, crypto_blkdev);
+            goto errout;
+        }
+
+        if (unix_write(realfd, buf, CRYPT_INPLACE_BUFSIZE) <= 0) {
+            SLOGE("Error =%d writing crypto_blkdev %s for inplace encrypt\n", errno, crypto_blkdev);
+            goto errout;
+        }
+    }
+
+    /* Do any remaining sectors */
+    for (i=0; i<remainder; i++) {
+        readPos = lseek64(realfd, 0, SEEK_CUR);
+        if(readPos < 0) {
+            SLOGE("Error =%d seeking real_blkdev %s for inplace encrypt\n", errno, real_blkdev);
+            goto errout;
+        }
+
+        if (unix_read(realfd, buf, 512) <= 0) {
+            SLOGE("Error = %d reading rival sectors from real_blkdev %s for inplace encrypt\n", errno, crypto_blkdev);
+            goto errout;
+        }
+
+        readPos = lseek64(realfd, readPos, SEEK_SET);
+        if(readPos < 0) {
+            SLOGE("Error =%d seeking crypto_blkdev %s for inplace encrypt\n", errno, crypto_blkdev);
+            goto errout;
+        }
+
+        if (unix_write(realfd, buf, 512) <= 0) {
+            SLOGE("Error =%d writing final sectors to crypto_blkdev %s for inplace encrypt\n", errno, crypto_blkdev);
+            goto errout;
+        }
+    }
+
+    *size_already_done += size;
+    rc = 0;
+
+errout:
+    close(realfd);
+
+    return rc;
+}
+#endif
+
 #define CRYPTO_ENABLE_WIPE 1
 #define CRYPTO_ENABLE_INPLACE 2
 
@@ -1150,6 +1386,9 @@ int cryptfs_enable(char *howarg, char *passwd)
     int num_vols;
     struct volume_info *vol_list = 0;
     off64_t cur_encryption_done=0, tot_encryption_size=0;
+#ifdef CONFIG_MMC_DISK_ENCRYPTION
+    unsigned long start_sec;
+#endif
 
     property_get("ro.crypto.state", encrypted_state, "");
     if (strcmp(encrypted_state, "unencrypted")) {
@@ -1176,6 +1415,14 @@ int cryptfs_enable(char *howarg, char *passwd)
         SLOGE("Cannot get size of block device %s\n", real_blkdev);
         goto error_unencrypted;
     }
+
+#ifdef CONFIG_MMC_DISK_ENCRYPTION
+    /* Get the starting position of the real block device */
+    if ((start_sec = get_blkdev_start_position(fd)) == 0) {
+        SLOGE("Cannot get the starting position of block device %s\n", real_blkdev);
+        goto error_unencrypted;
+    }
+#endif
     close(fd);
 
     /* If doing inplace encryption, make sure the orig fs doesn't include the crypto footer */
@@ -1189,6 +1436,11 @@ int cryptfs_enable(char *howarg, char *passwd)
             SLOGE("Orig filesystem overlaps crypto footer region.  Cannot encrypt in place.");
             goto error_unencrypted;
         }
+
+#ifdef CONFIG_MMC_DISK_ENCRYPTION
+        if(!set_crypto_info(start_sec, max_fs_size_sec))
+            goto error_unencrypted;
+#endif
     }
 
     /* Get a wakelock as this may take a while, and we don't want the
@@ -1273,6 +1525,21 @@ int cryptfs_enable(char *howarg, char *passwd)
         /* Tells the framework that inplace encryption is starting */
         property_set("vold.encrypt_progress", "0");
 
+#ifdef CONFIG_MMC_DISK_ENCRYPTION
+        if(load_qseecom_library()) {
+            if(!(*qseecom_create_key)(1, NULL)) {
+                if(!set_encryption_state(DISK_ENCRYPTION_IN_PROGRESS))
+                    goto error_shutting_down;
+            } else {
+                SLOGE("Failed to create disk encryption key \n");
+                goto error_shutting_down;
+            }
+        } else {
+            goto error_shutting_down;
+            SLOGE("Failed to load qseecom libraray \n");
+        }
+#endif
+
         /* restart the framework. */
         /* Create necessary paths on /data */
         if (prep_data_fs()) {
@@ -1306,7 +1573,11 @@ int cryptfs_enable(char *howarg, char *passwd)
         crypt_ftr.fs_size = nr_sec;
     }
     crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
+#ifndef CONFIG_MMC_DISK_ENCRYPTION
     strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
+#else
+    strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
+#endif
 
     /* Make an encrypted master key */
     if (create_encrypted_random_key(passwd, master_key, salt)) {
@@ -1318,6 +1589,9 @@ int cryptfs_enable(char *howarg, char *passwd)
     put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, master_key, salt);
 
     decrypt_master_key(passwd, salt, master_key, decrypted_master_key);
+
+#ifndef CONFIG_MMC_DISK_ENCRYPTION
+    SLOGE("CONFIG_MMC_DISK_ENCRYPTION not defiend\n");
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
                           "userdata");
 
@@ -1379,6 +1653,23 @@ int cryptfs_enable(char *howarg, char *passwd)
             delete_crypto_blk_dev(vol_list[i].label);
         }
     }
+
+#else
+    tot_encryption_size = crypt_ftr.fs_size;
+    if (how == CRYPTO_ENABLE_INPLACE) {
+        rc = cryptfs_enable_inplace(real_blkdev, real_blkdev, crypt_ftr.fs_size,
+                                    &cur_encryption_done, tot_encryption_size);
+        if (!rc) {
+            /* The inplace routine never actually sets the progress to 100%
+             * due to the round down nature of integer division, so set it here */
+            property_set("vold.encrypt_progress", "100");
+        }
+    } else {
+        /* Shouldn't happen */
+        SLOGE("cryptfs_enable: internal error, unknown option\n");
+        goto error_unencrypted;
+    }
+#endif
 
     free(vol_list);
 
