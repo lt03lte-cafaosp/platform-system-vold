@@ -163,23 +163,15 @@ static int process_config(VolumeManager *vm) {
     FILE *fp;
     int n = 0;
     char line[255];
-    char value_partition_enable[PROPERTY_VALUE_MAX];
-    char value_sdcard_enable[PROPERTY_VALUE_MAX];
+    char value[PROPERTY_VALUE_MAX];
 
-    property_get("persist.sys.emmcsdcard.enabled", value_sdcard_enable, "0");
-    property_get("persist.sys.emmcpartition", value_partition_enable, "0");
-    if (strcmp(value_partition_enable, "0") == 0 ) {
-        SLOGE("TRACE : open : /etc/vold.fstab");
+    property_get("persist.sys.emmcsdcard.enabled", value, "0");
+    if (strcmp(value, "0") == 0 ) {
         fp = fopen("/etc/vold.fstab", "r");
-    } else if (strcmp(value_sdcard_enable, "0") == 0 ) {
-        SLOGE("TRACE : open : /etc/vold.external.fstab");
-        fp = fopen("/etc/vold.external.fstab", "r");
-    } else if (strcmp(value_sdcard_enable, "1") == 0 ){
-        SLOGE("TRACE : open : /etc/vold.internal.fstab");
-        fp = fopen("/etc/vold.internal.fstab", "r");
+    } else {
+        fp = fopen("/etc/vold.secondary.fstab", "r");
     }
     if (!fp) return -1;
-    SLOGE("TRACE : open vold*fstab sucess !!");
 
     while(fgets(line, sizeof(line), fp)) {
         const char *delim = " \t";
