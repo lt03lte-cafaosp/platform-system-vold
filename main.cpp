@@ -165,13 +165,15 @@ static int process_config(VolumeManager *vm) {
     char line[255];
     char value[PROPERTY_VALUE_MAX];
 
-    property_get("persist.sys.emmcsdcard.enabled", value, "0");
-    if (strcmp(value, "0") == 0 ) {
-        fp = fopen("/etc/vold.fstab", "r");
-    } else {
-        fp = fopen("/etc/vold.secondary.fstab", "r");
+    /* checking "ro.fuse_sdcard" enable */
+    property_get("ro.fuse_sdcard", value, "true");
+    if (strcmp(value, "true") == 0) {
+        return -1;
     }
-    if (!fp) return -1;
+
+    if (!(fp = fopen("/etc/vold.fstab", "r"))) {
+        return -1;
+    }
 
     while(fgets(line, sizeof(line), fp)) {
         const char *delim = " \t";
