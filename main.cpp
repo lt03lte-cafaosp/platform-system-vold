@@ -23,7 +23,6 @@
 
 #include <fcntl.h>
 #include <dirent.h>
-#include <cutils/properties.h>
 
 #define LOG_TAG "Vold"
 
@@ -163,13 +162,6 @@ static int process_config(VolumeManager *vm) {
     FILE *fp;
     int n = 0;
     char line[255];
-    char value[PROPERTY_VALUE_MAX];
-
-    /* checking "ro.fuse_sdcard" enable */
-    property_get("ro.fuse_sdcard", value, "true");
-    if (strcmp(value, "true") == 0) {
-        return -1;
-    }
 
     if (!(fp = fopen("/etc/vold.fstab", "r"))) {
         return -1;
