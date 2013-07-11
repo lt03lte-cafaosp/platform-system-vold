@@ -170,6 +170,11 @@ int Volume::handleBlockEvent(NetlinkEvent *evt) {
     return -1;
 }
 
+bool Volume::isPrimaryStorage() {
+    const char* externalStorage = getenv("EXTERNAL_STORAGE");
+    return (externalStorage && !strcmp(getMountpoint(), externalStorage));
+}
+
 void Volume::setState(int state) {
     char msg[255];
     int oldState = mState;
@@ -293,8 +298,7 @@ int Volume::mountVol() {
     dev_t deviceNodes[4];
     int n, i, rc = 0;
     char errmsg[255];
-    const char* externalStorage = getenv("EXTERNAL_STORAGE");
-    bool primaryStorage = externalStorage && !strcmp(getMountpoint(), externalStorage);
+    bool primaryStorage = isPrimaryStorage();
     char decrypt_state[PROPERTY_VALUE_MAX];
     char crypto_state[PROPERTY_VALUE_MAX];
     char encrypt_progress[PROPERTY_VALUE_MAX];
@@ -607,35 +611,42 @@ int Volume::unmountVol(bool force, bool revert) {
     setState(Volume::State_Unmounting);
     usleep(1000 * 1000); // Give the framework some time to react
 
-    /*
-     * Remove the bindmount we were using to keep a reference to
-     * the previously obscured directory.
-     */
-    if (doUnmount(Volume::SEC_ASECDIR_EXT, force)) {
-        SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR_EXT, strerror(errno));
-        goto fail_remount_tmpfs;
-    }
+    if (isPrimaryStorage()) {
+        /*
+         * Remove the bindmount we were using to keep a reference to
+         * the previously obscured directory.
+         */
+        if (doUnmount(Volume::SEC_ASECDIR_EXT, force)) {
+            SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR_EXT, strerror(errno));
+            goto fail_remount_tmpfs;
+        }
 
-    /*
-     * Unmount the tmpfs which was obscuring the asec image directory
-     * from non root users
-     */
-    char secure_dir[PATH_MAX];
-    snprintf(secure_dir, PATH_MAX, "%s/.android_secure", getMountpoint());
-    if (doUnmount(secure_dir, force)) {
-        SLOGE("Failed to unmount tmpfs on %s (%s)", secure_dir, strerror(errno));
-        goto fail_republish;
-    }
+        /*
+         * Unmount the tmpfs which was obscuring the asec image directory
+         * from non root users
+         */
+        char secure_dir[PATH_MAX];
+        snprintf(secure_dir, PATH_MAX, "%s/.android_secure", getMountpoint());
+        if (doUnmount(secure_dir, force)) {
+            SLOGE("Failed to unmount tmpfs on %s (%s)", secure_dir, strerror(errno));
+            goto fail_republish;
+        }
 
-    /*
-     * Finally, unmount the actual block device from the staging dir
-     */
-    if (doUnmount(getMountpoint(), force)) {
-        SLOGE("Failed to unmount %s (%s)", SEC_STGDIR, strerror(errno));
-        goto fail_recreate_bindmount;
+        /*
+         * Finally, unmount the actual block device from the staging dir
+         */
+        if (doUnmount(getMountpoint(), force)) {
+            SLOGE("Failed to unmount %s (%s)", SEC_STGDIR, strerror(errno));
+            goto fail_recreate_bindmount;
+        }
+        SLOGI("%s unmounted sucessfully", getMountpoint());
+    } else {
+        if (doUnmount(getMountpoint(), force)) {
+            SLOGE("Failed to unmount %s (%s)", SEC_STGDIR, strerror(errno));
+            goto fail_republish;
+        }
+        SLOGI("%s unmounted sucessfully", getMountpoint());
     }
-
-    SLOGI("%s unmounted sucessfully", getMountpoint());
 
     /* If this is an encrypted volume, and we've been asked to undo
      * the crypto mapping, then revert the dm-crypt mapping, and revert
