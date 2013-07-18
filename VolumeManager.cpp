@@ -163,14 +163,19 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
         SysfsPathCollection::iterator it;
         DirectVolume *dv = NULL;
         VolumeManager *vm = VolumeManager::Instance();
-        char *uid;
         char label[10], mountPoint[25], cmd[50];
         for (it = mSysfsEntries->begin(); it != mSysfsEntries->end(); ++it) {
             if (!strncmp(devpath, *it, strlen(*it)) && !strncmp(evt->findParam("DEVTYPE"), "disk", strlen("disk"))) {
                 if (evt->getAction() != NetlinkEvent::NlActionRemove) {
                     // External Volume insertion is detected. Add new Volume here.
                     int part = atoi(evt->findParam("NPARTS"));
-                    char *uid = Volume::generateUID(evt->findParam("DEVNAME"));
+                    char* uid = (char *)malloc(sizeof(char)*Volume::UIDSIZE);
+                    if (!Volume::generateUID(evt->findParam("DEVNAME"), uid)) {
+                        hit = false;
+                        free(uid);
+                        SLOGE("Error in getting UID of the volume '%s'", devpath);
+                        return;
+                    }
                     snprintf(label, sizeof(label), "Disk_%s", uid);
                     snprintf(mountPoint, sizeof(mountPoint), "%s/%s",Volume::REMDIR, label);
                     dv = new DirectVolume(vm, label, mountPoint, -1);
@@ -180,7 +185,7 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
                     // Handle the detected device
                     dv->handleBlockEvent(evt);
                     hit = true;
-                    delete uid;
+                    free(uid);
                     break;
                 }
             }
