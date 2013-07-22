@@ -489,15 +489,13 @@ int Volume::mountVol() {
     }
 }
 
-char *Volume::generateUID(const char *devName) {
-    char buf[255], buf2[255], name[255];
+bool Volume::generateUID(const char *devName, char *uid) {
+    char name[32], buf[128], buf2[255];
     char *p;
     int j, f, len;
-    const int UIDSIZE = 5;
-    const int SUBDIR = 6;
     snprintf(name, sizeof(name), "/sys/block/%s", devName);
     len = readlink(name, buf, sizeof(buf));
-    sprintf(buf2, "%s/%s", "/sys/block/", buf);
+    snprintf(buf2, sizeof(buf2), "%s/%s", "/sys/block", buf);
     for (j = 0; j < SUBDIR; j++) {
         p = strrchr(buf2, '/');
         *p = 0;
@@ -505,14 +503,18 @@ char *Volume::generateUID(const char *devName) {
     strncat(buf2, "/serial", strlen("/serial"));
     f = open(buf2, 0);
     len = read(f, buf, sizeof(buf));
-    if (len <= 0)
-        SLOGE("Error getting UID of the Device.");
+    if (len < UIDSIZE) {
+        close(f);
+        return false;
+    }
     buf[len] = '\0';
-    char *uid = new char[UIDSIZE];
-    strncpy(uid, buf + (len - UIDSIZE), UIDSIZE-1);
-    uid[UIDSIZE-1] = '\0';
+    strncpy(uid, buf + (len - UIDSIZE), UIDSIZE);
+    /* TODO:Ensure all characters of UID are only from the [A-Z,a-z,0-9];
+     * as there may be the case when bad USB stick will have some special characters
+     */
     SLOGD("UID of the Device is = %s", uid);
-    return uid;
+    close(f);
+    return true;
 }
 
 int Volume::createBindMounts() {

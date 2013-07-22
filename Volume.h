@@ -48,6 +48,8 @@ public:
 
     static const char *LOOPDIR;
     static const char *REMDIR;
+    static const int UIDSIZE = 5;
+    static const int SUBDIR  = 6;
 
 protected:
     char *mLabel;
@@ -87,7 +89,7 @@ public:
 
     void setNumParts(int num) { numParts = num; partCount = num; }
     int getNumParts() { return numParts; }
-    static char *generateUID(const char* devName);
+    static bool generateUID(const char* devName, char* uid);
 
 protected:
     void setState(int state);
