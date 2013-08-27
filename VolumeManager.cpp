@@ -1295,7 +1295,15 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
-    int fd;
+#if VOLD_EMMC_SHARES_DEV_MAJOR
+    // Shared major devices should get device nodes this way
+    v->getDeviceNodes((dev_t *) &d, 1);
+    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
+        errno = EINVAL;
+        return -1;
+    }
+#endif
+	int fd;
     char nodepath[255];
     int written = snprintf(nodepath,
              sizeof(nodepath), "/dev/block/vold/%d:%d",

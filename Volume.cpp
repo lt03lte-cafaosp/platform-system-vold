@@ -232,8 +232,14 @@ int Volume::formatVol() {
     bool formatEntireDevice = (mPartIdx == -1);
     char devicePath[255];
     dev_t diskNode = getDiskDevice();
-    dev_t partNode = MKDEV(MAJOR(diskNode), (formatEntireDevice ? 1 : mPartIdx));
+    dev_t partNode;
 
+#if VOLD_EMMC_SHARES_DEV_MAJOR
+    // Get the first part of the device
+    getDeviceNodes(&partNode, 1);
+#else
+    partNode = MKDEV(MAJOR(diskNode), (formatEntireDevice ? 1 : mPartIdx));
+#endif
     setState(Volume::State_Formatting);
 
     int ret = -1;

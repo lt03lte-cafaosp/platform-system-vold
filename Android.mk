@@ -58,7 +58,10 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES := $(common_c_includes)
 
-LOCAL_CFLAGS := -Werror=format
+# FIXME Hard coded to define it for all our current devices
+# shared the same vold emmc major number. Maybe we'll change
+# it to board directory later.
+LOCAL_CFLAGS := -Werror=format -DVOLD_EMMC_SHARES_DEV_MAJOR=1
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
