@@ -1282,8 +1282,16 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
     }
 
     dev_t d = v->getShareDevice();
+
     if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
         // This volume does not support raw disk access
+        errno = EINVAL;
+        return -1;
+    }
+
+    // Shared major devices should get device nodes this way
+    v->getDeviceNodes((dev_t *) &d, 1);
+    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
         errno = EINVAL;
         return -1;
     }
