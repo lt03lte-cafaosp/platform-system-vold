@@ -49,7 +49,8 @@
 #include "Asec.h"
 #include "cryptfs.h"
 
-#define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
+#define MASS_STORAGE_PRIMARY_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun1/file"
+#define MASS_STORAGE_EXTERNAL_PATH "/sys/class/android_usb/android0/f_mass_storage/lun/file"
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -1310,11 +1311,17 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
+    if (v->isPrimaryStorage()) {
+        if ((fd = open(MASS_STORAGE_PRIMARY_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open primary ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
+    } else {
+        if ((fd = open(MASS_STORAGE_EXTERNAL_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
     }
-
     if (write(fd, nodepath, strlen(nodepath)) < 0) {
         SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
         close(fd);
@@ -1360,11 +1367,17 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
     }
 
     int fd;
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
+    if (v->isPrimaryStorage()) {
+        if ((fd = open(MASS_STORAGE_PRIMARY_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open primary ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
+    } else {
+        if ((fd = open(MASS_STORAGE_EXTERNAL_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
     }
-
     char ch = 0;
     if (write(fd, &ch, 1) < 0) {
         SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
