@@ -675,11 +675,7 @@ fail_remount_tmpfs:
         goto out_nomedia;
     }
 fail_republish:
-    if (doMoveMount(SEC_STGDIR, getMountpoint(), force)) {
-        SLOGE("Failed to republish mount after failure! - Storage will appear offline!");
-        goto out_nomedia;
-    }
-
+    SLOGI("Failed to unmount volume %s, set back to mounted state", getMountpoint());
     setState(Volume::State_Mounted);
     return -1;
 
