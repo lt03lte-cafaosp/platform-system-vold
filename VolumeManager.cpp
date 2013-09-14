@@ -1299,6 +1299,17 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
+    // Shared major devices should get device nodes this way
+    if (!v->getDeviceNodes((dev_t *) &d, 1)) {
+        SLOGE("Failed to get device nodes (%s)\n", strerror(errno));
+        return -1;
+    }
+
+    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
+        errno = EINVAL;
+        return -1;
+    }
+
     int fd;
     char nodepath[255];
     int written = snprintf(nodepath,
