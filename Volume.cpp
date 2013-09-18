@@ -232,8 +232,13 @@ int Volume::formatVol() {
     bool formatEntireDevice = (mPartIdx == -1);
     char devicePath[255];
     dev_t diskNode = getDiskDevice();
-    dev_t partNode = MKDEV(MAJOR(diskNode), (formatEntireDevice ? 1 : mPartIdx));
+    dev_t partNode;
 
+    // Get the first part of the device
+    if (!getDeviceNodes(&partNode, formatEntireDevice ? 1 : mPartIdx)) {
+        SLOGE("Failed to get device nodes (%s)\n", strerror(errno));
+        return -1;
+    }
     setState(Volume::State_Formatting);
 
     int ret = -1;
