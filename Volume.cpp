@@ -617,15 +617,6 @@ int Volume::unmountVol(bool force, bool revert) {
 
     if (isPrimaryStorage()) {
         /*
-         * Remove the bindmount we were using to keep a reference to
-         * the previously obscured directory.
-         */
-        if (doUnmount(Volume::SEC_ASECDIR_EXT, force)) {
-            SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR_EXT, strerror(errno));
-            goto fail_remount_tmpfs;
-        }
-
-        /*
          * Unmount the tmpfs which was obscuring the asec image directory
          * from non root users
          */
@@ -634,6 +625,15 @@ int Volume::unmountVol(bool force, bool revert) {
         if (doUnmount(secure_dir, force)) {
             SLOGE("Failed to unmount tmpfs on %s (%s)", secure_dir, strerror(errno));
             goto fail_republish;
+        }
+
+        /*
+         * Remove the bindmount we were using to keep a reference to
+         * the previously obscured directory.
+         */
+        if (doUnmount(Volume::SEC_ASECDIR_EXT, force)) {
+            SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR_EXT, strerror(errno));
+            goto fail_remount_tmpfs;
         }
 
         /*
@@ -680,11 +680,7 @@ fail_remount_tmpfs:
         goto out_nomedia;
     }
 fail_republish:
-    if (doMoveMount(SEC_STGDIR, getMountpoint(), force)) {
-        SLOGE("Failed to republish mount after failure! - Storage will appear offline!");
-        goto out_nomedia;
-    }
-
+    SLOGI("Failed to unmount volume %s, set back to mounted state", getMountpoint());
     setState(Volume::State_Mounted);
     return -1;
 
