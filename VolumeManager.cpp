@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <sys/mount.h>
 #include <dirent.h>
+#include <cutils/properties.h>
 
 #include <linux/kdev_t.h>
 
@@ -49,7 +50,8 @@
 #include "Asec.h"
 #include "cryptfs.h"
 
-#define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
+#define MASS_STORAGE_PRIMARY_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun1/file"
+#define MASS_STORAGE_EXTERNAL_PATH "/sys/class/android_usb/android0/f_mass_storage/lun/file"
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -60,14 +62,24 @@ VolumeManager *VolumeManager::Instance() {
 }
 
 VolumeManager::VolumeManager() {
+    char value[PROPERTY_VALUE_MAX];
+    int dirty_ratio;
+
+    property_get("ro.sys.umsdirtyratio", value, "0");
+    dirty_ratio = atoi(value);
+    if (dirty_ratio < 0 || dirty_ratio > 40) {
+        SLOGE("Invalid dirty ratio value %d, set as zero", dirty_ratio);
+        dirty_ratio = 0;
+    }
+
     mDebug = false;
     mVolumes = new VolumeCollection();
     mActiveContainers = new AsecIdCollection();
     mBroadcaster = NULL;
     mUmsSharingCount = 0;
     mSavedDirtyRatio = -1;
-    // set dirty ratio to 0 when UMS is active
-    mUmsDirtyRatio = 0;
+    // set dirty ratio when UMS is active
+    mUmsDirtyRatio = dirty_ratio;
     mVolManagerDisabled = 0;
 }
 
@@ -1310,11 +1322,17 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
+    if (v->isPrimaryStorage()) {
+        if ((fd = open(MASS_STORAGE_PRIMARY_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open primary ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
+    } else {
+        if ((fd = open(MASS_STORAGE_EXTERNAL_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
     }
-
     if (write(fd, nodepath, strlen(nodepath)) < 0) {
         SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
         close(fd);
@@ -1360,11 +1378,17 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
     }
 
     int fd;
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
+    if (v->isPrimaryStorage()) {
+        if ((fd = open(MASS_STORAGE_PRIMARY_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open primary ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
+    } else {
+        if ((fd = open(MASS_STORAGE_EXTERNAL_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
     }
-
     char ch = 0;
     if (write(fd, &ch, 1) < 0) {
         SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
