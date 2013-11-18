@@ -63,6 +63,10 @@ public:
     static const int VolumeDiskRemoved             = 631;
     static const int VolumeBadRemoval              = 632;
 
+    //900 series - External mass storage device event was triggered;
+    static const int NewExternalDevice             = 906;
+    static const int ExternalDeviceRemoved         = 907;
+
     static int convertFromErrno();
 };
 #endif

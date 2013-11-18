@@ -29,6 +29,7 @@
 #define MD5_ASCII_LENGTH_PLUS_NULL ((MD5_DIGEST_LENGTH*2)+1)
 
 typedef enum { ASEC, OBB } container_type_t;
+typedef android::List<char *> SysfsPathCollection;
 
 class ContainerData {
 public:
@@ -58,6 +59,7 @@ private:
     SocketListener        *mBroadcaster;
 
     VolumeCollection      *mVolumes;
+    SysfsPathCollection   *mSysfsEntries;
     AsecIdCollection      *mActiveContainers;
     bool                   mDebug;
 
@@ -76,6 +78,7 @@ public:
     void handleBlockEvent(NetlinkEvent *evt);
 
     int addVolume(Volume *v);
+    int addSysfsPath(const char *sysfs);
 
     int listVolumes(SocketClient *cli);
     int mountVolume(const char *label);
