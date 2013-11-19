@@ -174,26 +174,34 @@ static int process_config(VolumeManager *vm)
             DirectVolume *dv = NULL;
             flags = 0;
 
-            dv = new DirectVolume(vm, fstab->recs[i].label,
-                                  fstab->recs[i].mount_point,
-                                  fstab->recs[i].partnum);
-
-            if (dv->addPath(fstab->recs[i].blk_device)) {
-                SLOGE("Failed to add devpath %s to volume %s",
-                      fstab->recs[i].blk_device, fstab->recs[i].label);
-                goto out_fail;
+            if (!strcmp(fstab->recs[i].label, "external")) {
+                if (vm->addSysfsPath(fstab->recs[i].blk_device)) {
+                    SLOGE("Failed to add devpath %s to volume %s", fstab->recs[i].blk_device, fstab->recs[i].label);
+                    goto out_fail;
+                }
             }
+            else {
+                dv = new DirectVolume(vm, fstab->recs[i].label,
+                        fstab->recs[i].mount_point,
+                        fstab->recs[i].partnum);
 
-            /* Set any flags that might be set for this volume */
-            if (fs_mgr_is_nonremovable(&fstab->recs[i])) {
-                flags |= VOL_NONREMOVABLE;
-            }
-            if (fs_mgr_is_encryptable(&fstab->recs[i])) {
-                flags |= VOL_ENCRYPTABLE;
-            }
-            dv->setFlags(flags);
+                if (dv->addPath(fstab->recs[i].blk_device)) {
+                    SLOGE("Failed to add devpath %s to volume %s",
+                            fstab->recs[i].blk_device, fstab->recs[i].label);
+                    goto out_fail;
+                }
 
-            vm->addVolume(dv);
+                /* Set any flags that might be set for this volume */
+                if (fs_mgr_is_nonremovable(&fstab->recs[i])) {
+                    flags |= VOL_NONREMOVABLE;
+                }
+                if (fs_mgr_is_encryptable(&fstab->recs[i])) {
+                    flags |= VOL_ENCRYPTABLE;
+                }
+                dv->setFlags(flags);
+
+                vm->addVolume(dv);
+            }
         }
     }
 
