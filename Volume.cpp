@@ -425,14 +425,11 @@ int Volume::mountVol() {
         errno = 0;
         int gid;
 
-        if (primaryStorage) {
-            // Special case the primary SD card.
-            // For this we grant write access to the SDCARD_RW group.
-            gid = AID_SDCARD_RW;
-        } else {
-            // For secondary external storage we keep things locked up.
-            gid = AID_MEDIA_RW;
-        }
+        // Some of the 3rd party applications may don't have the permission of
+        // android.permission.WRITE_MEDIA_STORAGE, they will not able to write
+        // into the secondary storage. We change the gid to sdcard_rw to make
+        // sure both primary storage and secondary storage could be written.
+        gid = AID_SDCARD_RW;
         if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
                 AID_SYSTEM, gid, 0702, true)) {
             SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
