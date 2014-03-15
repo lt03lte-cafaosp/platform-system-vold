@@ -51,6 +51,7 @@
 #include "cryptfs.h"
 
 #define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
+#define UICC0_MASS_STORAGE_PATH  "/sys/class/android_usb/android0/f_mass_storage/uicc0/file"
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -1300,9 +1301,16 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
+    if (!strncmp(v->getLabel(), "uicc0", strlen("uicc0"))) {
+        if ((fd = open(UICC0_MASS_STORAGE_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
+    } else {
+        if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
     }
 
     if (write(fd, nodepath, strlen(nodepath)) < 0) {
@@ -1350,9 +1358,16 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
     }
 
     int fd;
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
+    if (!strncmp(v->getLabel(), "uicc0", strlen("uicc0"))) {
+        if ((fd = open(UICC0_MASS_STORAGE_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
+    } else {
+        if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
+            SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
     }
 
     char ch = 0;
