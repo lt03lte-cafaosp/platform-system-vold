@@ -53,6 +53,7 @@
 #define MASS_STORAGE_PRIMARY_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun1/file"
 #define MASS_STORAGE_EXTERNAL_PATH "/sys/class/android_usb/android0/f_mass_storage/lun/file"
 
+
 VolumeManager *VolumeManager::sInstance = NULL;
 
 VolumeManager *VolumeManager::Instance() {
@@ -150,6 +151,7 @@ int VolumeManager::addSysfsPath(const char *sysfs) {
 
 void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
     const char *devpath = evt->findParam("DEVPATH");
+    const char *devname = evt->findParam("DEVNAME");
 
     /* Lookup a volume to handle this device */
     VolumeCollection::iterator it;
@@ -202,8 +204,15 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
         }
         if(!hit) {
 #ifdef NETLINK_DEBUG
-        SLOGW("No volumes handled block event for '%s'", devpath);
+        SLOGW("No volumes handled block event for devpath = '%s'  devname = '%s'", devpath,devname);
 #endif
+//Hard Coding for Sata
+             if(!strncmp(evt->findParam("DEVNAME"), "sda", strlen("sda"))) {
+                 int mountStatus = Ext4::doMount("/dev/block/sda", "/data/sata", false, false, false);
+                 if(mountStatus) {
+                     SLOGW("Failed in mounting  '%s' '%d'", devpath, mountStatus);
+                 }
+             }
         }
     }
 }
