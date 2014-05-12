@@ -74,6 +74,7 @@ private:
     void handlePartitionChanged(const char *devpath, NetlinkEvent *evt);
 
     int doMountVfat(const char *deviceNode, const char *mountPoint);
+    int getUICCVolumeNum(const char *dp);
 
 };
 
