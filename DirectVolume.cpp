@@ -92,12 +92,33 @@ void DirectVolume::handleVolumeUnshared() {
     setState(Volume::State_Idle);
 }
 
+int DirectVolume::getUICCVolumeNum(const char *dp) {
+    int mVolNum = -1;
+    if (strstr(dp, ":0:0:0"))
+        mVolNum = 0;
+    else if (strstr(dp, ":0:0:1"))
+        mVolNum = 1;
+    return mVolNum;
+}
+
 int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
     const char *dp = evt->findParam("DEVPATH");
 
     PathCollection::iterator  it;
     for (it = mPaths->begin(); it != mPaths->end(); ++it) {
         if (!strncmp(dp, *it, strlen(*it))) {
+            /* Check for UICC prefix in label */
+            if (strstr(getLabel(), "uicc")) {
+                char mLabel[15];
+                int mNum = getUICCVolumeNum(dp);
+                if (mNum < 0) {
+                    SLOGE("Invalid uicc volume number");
+                    continue;
+                }
+                snprintf(mLabel, sizeof(mLabel), "uicc%d", mNum);
+                if (strncmp(getLabel(), mLabel, strlen(mLabel)) != 0)
+                    continue;
+            }
             /* We can handle this disk */
             int action = evt->getAction();
             const char *devtype = evt->findParam("DEVTYPE");
