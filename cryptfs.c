@@ -1244,8 +1244,10 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
   }
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-  if(!set_hw_device_encryption_key(passwd, (char*) crypt_ftr.crypto_type_name))
-    return -1;
+  if(is_hw_disk_encryption((char*)crypt_ftr.crypto_type_name)) {
+      if(!set_hw_device_encryption_key(passwd, (char*) crypt_ftr.crypto_type_name))
+          return -1;
+}
 #endif
 
   if (create_crypto_blk_dev(&crypt_ftr, decrypted_master_key,
@@ -1615,6 +1617,9 @@ int cryptfs_enable(char *howarg, char *passwd)
     struct crypt_persist_data *pdata;
     char tmpfs_options[PROPERTY_VALUE_MAX];
     char encrypted_state[PROPERTY_VALUE_MAX];
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+    char encryption_type[PROPERTY_VALUE_MAX];
+#endif
     char lockid[32] = { 0 };
     char key_loc[PROPERTY_VALUE_MAX];
     char fuse_sdcard[PROPERTY_VALUE_MAX];
@@ -1783,9 +1788,16 @@ int cryptfs_enable(char *howarg, char *passwd)
 #ifndef CONFIG_HW_DISK_ENCRYPTION
     strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 #else
-    strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
-    if(!set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name))
+    property_get("crypto.encryption_type", encryption_type, "hw");
+    if(!strncmp(encryption_type, "hw", PROPERTY_VALUE_MAX)) {
+        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
+        if(!set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name))
+            goto error_shutting_down;
+    } else if(!strncmp(encryption_type, "sw", PROPERTY_VALUE_MAX)) {
+        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
+    } else {
         goto error_shutting_down;
+    }
 #endif
 
     /* Make an encrypted master key */
@@ -1946,6 +1958,9 @@ int cryptfs_changepw(char *newpw)
 {
     struct crypt_mnt_ftr crypt_ftr;
     unsigned char decrypted_master_key[KEY_LEN_BYTES];
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+    char encryption_type[PROPERTY_VALUE_MAX];
+#endif
 
     /* This is only allowed after we've successfully decrypted the master key */
     if (! master_key_saved) {
@@ -1965,7 +1980,9 @@ int cryptfs_changepw(char *newpw)
     put_crypt_ftr_and_key(&crypt_ftr);
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-    update_hw_device_encryption_key(newpw, (char*)crypt_ftr.crypto_type_name);
+    property_get("crypto.encryption_type", encryption_type, "hw");
+    if(!strncmp(encryption_type, "hw", PROPERTY_VALUE_MAX))
+        update_hw_device_encryption_key(newpw, (char*)crypt_ftr.crypto_type_name);
 #endif
     return 0;
 }
