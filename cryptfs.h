@@ -43,8 +43,9 @@
 
 /* definitions of flags in the structure below */
 #define CRYPT_MNT_KEY_UNENCRYPTED 0x1 /* The key for the partition is not encrypted. */
-#define CRYPT_ENCRYPTION_IN_PROGRESS 0x2 /* Set when starting encryption,
-                                          * clear when done before rebooting */
+#define CRYPT_ENCRYPTION_IN_PROGRESS 0x2 /* Set when starting encryption, clear when done before rebooting */
+#define CRYPT_PFE_ACTIVATED 0x4 /* Per-File-Encryption is activated. */
+#define CRYPT_FDE_COMPLETED 0x8 /* Full-Disk-Encryption is completed. */
 
 #define CRYPT_MNT_MAGIC 0xD0B5B1C4
 #define PERSIST_DATA_MAGIC 0xE950CD44
@@ -140,6 +141,9 @@ extern "C" {
 
   int cryptfs_crypto_complete(void);
   int cryptfs_check_passwd(char *pw);
+  int cryptfs_pfe_activate(void);
+  int cryptfs_pfe_deactivate(void);
+  int cryptfs_pfe_boot(void);
   int cryptfs_verify_passwd(char *newpw);
   int cryptfs_restart(void);
   int cryptfs_enable(char *flag, char *passwd);
