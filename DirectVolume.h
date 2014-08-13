@@ -42,6 +42,7 @@ protected:
     int            mDiskNumParts;
     unsigned int   mPendingPartMap;
     int            mIsDecrypted;
+    bool           mIsValid;
 
 public:
     DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags);
@@ -51,6 +52,8 @@ public:
 
     const char *getMountpoint() { return mMountpoint; }
     const char *getFuseMountpoint() { return mFuseMountpoint; }
+    bool isValidSysfs() { return mIsValid; }
+    void setValidSysfs(bool val) { mIsValid = val; }
 
     int handleBlockEvent(NetlinkEvent *evt);
     dev_t getDiskDevice();
