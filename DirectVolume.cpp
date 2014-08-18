@@ -43,6 +43,7 @@ DirectVolume::DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags) :
     mDiskMinor = -1;
     mDiskNumParts = 0;
     mIsDecrypted = 0;
+    mIsValid = true;
 
     if (strcmp(rec->mount_point, "auto") != 0) {
         ALOGE("Vold managed volumes must have auto mount point; ignoring %s",
@@ -119,6 +120,7 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                 if (strncmp(getLabel(), mLabel, strlen(mLabel)) != 0)
                     continue;
             }
+            setValidSysfs(true);
             /* We can handle this disk */
             int action = evt->getAction();
             const char *devtype = evt->findParam("DEVTYPE");
