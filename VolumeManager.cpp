@@ -127,6 +127,15 @@ int VolumeManager::stop() {
 }
 
 int VolumeManager::addVolume(Volume *v) {
+    // If entry is duplicated then mark isValid to false for both of them.
+    // Mark the valid entry on the first insertion of the card on handleBlockEvent()
+    VolumeCollection::iterator it;
+    for (it = mVolumes->begin(); it != mVolumes->end(); ++it) {
+        if(!strncmp((*it)->getLabel(), v->getLabel(), strlen((*it)->getLabel()))) {
+            (*it)->setValidSysfs(false);
+            v->setValidSysfs(false);
+        }
+    }
     mVolumes->push_back(v);
     return 0;
 }
@@ -158,12 +167,14 @@ int VolumeManager::listVolumes(SocketClient *cli) {
     VolumeCollection::iterator i;
 
     for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        char *buffer;
-        asprintf(&buffer, "%s %s %d",
-                 (*i)->getLabel(), (*i)->getFuseMountpoint(),
-                 (*i)->getState());
-        cli->sendMsg(ResponseCode::VolumeListResult, buffer, false);
-        free(buffer);
+        if ((*i)->isValidSysfs()) {
+            char *buffer;
+            asprintf(&buffer, "%s %s %d",
+                     (*i)->getLabel(), (*i)->getFuseMountpoint(),
+                     (*i)->getState());
+            cli->sendMsg(ResponseCode::VolumeListResult, buffer, false);
+            free(buffer);
+        }
     }
     cli->sendMsg(ResponseCode::CommandOkay, "Volumes listed.", false);
     return 0;
@@ -1153,9 +1164,11 @@ Volume* VolumeManager::getVolumeForFile(const char *fileName) {
     VolumeCollection::iterator i;
 
     for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        const char* mountPoint = (*i)->getFuseMountpoint();
-        if (!strncmp(fileName, mountPoint, strlen(mountPoint))) {
-            return *i;
+        if ((*i)->isValidSysfs()) {
+            const char* mountPoint = (*i)->getFuseMountpoint();
+            if (!strncmp(fileName, mountPoint, strlen(mountPoint))) {
+                return *i;
+            }
         }
     }
 
@@ -1507,8 +1520,10 @@ int VolumeManager::getNumDirectVolumes(void) {
     int n=0;
 
     for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        if ((*i)->getShareDevice() != (dev_t)0) {
-            n++;
+        if ((*i)->isValidSysfs()) {
+            if ((*i)->getShareDevice() != (dev_t)0) {
+                n++;
+            }
         }
     }
     return n;
@@ -1525,11 +1540,13 @@ int VolumeManager::getDirectVolumeList(struct volume_info *vol_list) {
     dev_t d;
 
     for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        if ((d=(*i)->getShareDevice()) != (dev_t)0) {
-            (*i)->getVolInfo(&vol_list[n]);
-            snprintf(vol_list[n].blk_dev, sizeof(vol_list[n].blk_dev),
-                     "/dev/block/vold/%d:%d",MAJOR(d), MINOR(d));
-            n++;
+        if ((*i)->isValidSysfs()) {
+            if ((d=(*i)->getShareDevice()) != (dev_t)0) {
+                (*i)->getVolInfo(&vol_list[n]);
+                snprintf(vol_list[n].blk_dev, sizeof(vol_list[n].blk_dev),
+                         "/dev/block/vold/%d:%d",MAJOR(d), MINOR(d));
+                n++;
+            }
         }
     }
 
@@ -1624,12 +1641,14 @@ Volume *VolumeManager::lookupVolume(const char *label) {
     VolumeCollection::iterator i;
 
     for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        if (label[0] == '/') {
-            if (!strcmp(label, (*i)->getFuseMountpoint()))
-                return (*i);
-        } else {
-            if (!strcmp(label, (*i)->getLabel()))
-                return (*i);
+        if ((*i)->isValidSysfs()) {
+            if (label[0] == '/') {
+                if (!strcmp(label, (*i)->getFuseMountpoint()))
+                    return (*i);
+            } else {
+                if (!strcmp(label, (*i)->getLabel()))
+                    return (*i);
+            }
         }
     }
     return NULL;
