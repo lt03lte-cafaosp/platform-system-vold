@@ -345,10 +345,16 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
          * Yikes, our mounted partition is going away!
          */
 
-        bool providesAsec = (getFlags() & VOL_PROVIDES_ASEC) != 0;
-        if (providesAsec && mVm->cleanupAsec(this, true)) {
-            SLOGE("Failed to cleanup ASEC - unmount will probably fail!");
-        }
+        /*
+        * Install some APK into external sdcard, the framework will restart if
+        * hotplug sdcard because system server will be killed by vold.
+        * Don't let vold clean asec file, but let PackageManagerService do it.
+        */
+
+        //bool providesAsec = (getFlags() & VOL_PROVIDES_ASEC) != 0;
+        //if (providesAsec && mVm->cleanupAsec(this, true)) {
+        //    SLOGE("Failed to cleanup ASEC - unmount will probably fail!");
+        //}
 
         snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
                  getLabel(), getFuseMountpoint(), major, minor);
