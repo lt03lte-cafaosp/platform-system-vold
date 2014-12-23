@@ -96,6 +96,18 @@ static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+static unsigned int is_hw_fde_enabled()
+{
+    return get_hwfde_status();
+}
+#else
+static unsigned int is_hw_fde_enabled()
+{
+    return 0;
+}
+#endif
+
 static int keymaster_init(keymaster_device_t **keymaster_dev)
 {
     int rc;
@@ -994,14 +1006,14 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned c
   tgt->status = 0;
   tgt->sector_start = 0;
   tgt->length = crypt_ftr->fs_size;
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-  if(is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name))
-    strlcpy(tgt->target_type, "req-crypt",DM_MAX_TYPE_NAME);
-  else
-    strlcpy(tgt->target_type, "crypt", DM_MAX_TYPE_NAME);
-#else
-  strcpy(tgt->target_type, "crypt");
-#endif
+  if (is_hw_fde_enabled()) {
+    if(is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name))
+      strlcpy(tgt->target_type, "req-crypt",DM_MAX_TYPE_NAME);
+    else
+      strlcpy(tgt->target_type, "crypt", DM_MAX_TYPE_NAME);
+  } else {
+    strcpy(tgt->target_type, "crypt");
+  }
 
   crypt_params = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
@@ -1036,6 +1048,7 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
     char buffer[DM_CRYPT_BUF_SIZE];
     struct dm_ioctl *io;
     struct dm_target_versions *v;
+    int flag;
     int i;
 
     io = (struct dm_ioctl *) buffer;
@@ -1051,11 +1064,12 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
      */
     v = (struct dm_target_versions *) &buffer[sizeof(struct dm_ioctl)];
     while (v->next) {
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-        if(!strcmp(v->name, "crypt") || !strcmp(v->name, "req-crypt")) {
-#else
-        if (! strcmp(v->name, "crypt")) {
-#endif
+        if (is_hw_fde_enabled())
+            flag = (!strcmp(v->name, "crypt") || !strcmp(v->name, "req-crypt"));
+        else
+            flag = (!strcmp(v->name, "crypt"));
+
+        if (flag) {
             /* We found the crypt driver, return the version, and get out */
             version[0] = v->version[0];
             version[1] = v->version[1];
@@ -1083,10 +1097,8 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   int version[3];
   char *extra_params;
   int load_count;
-#ifdef CONFIG_HW_DISK_ENCRYPTION
   char encrypted_state[PROPERTY_VALUE_MAX] = {0};
   char progress[PROPERTY_VALUE_MAX] = {0};
-#endif
 
   if ((fd = open("/dev/device-mapper", O_RDWR)) < 0 ) {
     SLOGE("Cannot open device-mapper\n");
@@ -1110,25 +1122,25 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   minor = (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00);
   snprintf(crypto_blk_name, MAXPATHLEN, "/dev/block/dm-%u", minor);
 
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-  /* Set fde_enabled if either FDE completed or in-progress */
-  property_get("ro.crypto.state", encrypted_state, ""); /* FDE completed */
-  property_get("vold.encrypt_progress", progress, ""); /* FDE in progress */
-  if (!strcmp(encrypted_state, "encrypted") || strcmp(progress, ""))
-      extra_params = "fde_enabled";
-  else
-      extra_params = "fde_disabled";
-#else
-  extra_params = "";
-  if (! get_dm_crypt_version(fd, name, version)) {
-      /* Support for allow_discards was added in version 1.11.0 */
-      if ((version[0] >= 2) ||
-          ((version[0] == 1) && (version[1] >= 11))) {
-          extra_params = "1 allow_discards";
-          SLOGI("Enabling support for allow_discards in dmcrypt.\n");
+  if (is_hw_fde_enabled()) {
+      /* Set fde_enabled if either FDE completed or in-progress */
+      property_get("ro.crypto.state", encrypted_state, ""); /* FDE completed */
+      property_get("vold.encrypt_progress", progress, ""); /* FDE in progress */
+      if (!strcmp(encrypted_state, "encrypted") || strcmp(progress, ""))
+          extra_params = "fde_enabled";
+      else
+          extra_params = "fde_disabled";
+  } else {
+      extra_params = "";
+      if (!get_dm_crypt_version(fd, name, version)) {
+          /* Support for allow_discards was added in version 1.11.0 */
+          if ((version[0] >= 2) ||
+                ((version[0] == 1) && (version[1] >= 11))) {
+              extra_params = "1 allow_discards";
+              SLOGI("Enabling support for allow_discards in dmcrypt.\n");
+          }
       }
   }
-#endif
 
   load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name,
                                          fd, extra_params);
@@ -1782,11 +1794,11 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
   fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-  if(is_hw_disk_encryption((char*) crypt_ftr->crypto_type_name))
-    if (!set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name))
-      rc = -1;
-#endif
+  if (is_hw_fde_enabled()) {
+    if(is_hw_disk_encryption((char*) crypt_ftr->crypto_type_name))
+      if (!set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name))
+        rc = -1;
+  }
 
   // Create crypto block device - all (non fatal) code paths
   // need it
@@ -3123,14 +3135,14 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
            On successfully completing encryption, remove this flag */
         crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
         crypt_ftr.crypt_type = crypt_type;
-#ifndef CONFIG_HW_DISK_ENCRYPTION
-        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
-#else
-        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
-        wipe_hw_device_encryption_key((char*)crypt_ftr.crypto_type_name);
-        if(!set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name))
-          goto error_shutting_down;
-#endif
+        if (!is_hw_fde_enabled()) {
+          strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
+        } else {
+          strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
+          wipe_hw_device_encryption_key((char*)crypt_ftr.crypto_type_name);
+          if(!set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name))
+            goto error_shutting_down;
+        }
 
         /* Make an encrypted master key */
         if (create_encrypted_random_key(passwd, crypt_ftr.master_key, crypt_ftr.salt, &crypt_ftr)) {
@@ -3622,11 +3634,10 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
     /* save the key */
     put_crypt_ftr_and_key(&crypt_ftr);
 
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-    update_hw_device_encryption_key(crypt_type == CRYPT_TYPE_DEFAULT ?
+    if (is_hw_fde_enabled())
+      update_hw_device_encryption_key(crypt_type == CRYPT_TYPE_DEFAULT ?
                                     DEFAULT_PASSWORD : newpw,
                                     (char*)crypt_ftr.crypto_type_name);
-#endif
     return 0;
 }
 
