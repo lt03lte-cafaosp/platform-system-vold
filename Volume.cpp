@@ -121,6 +121,7 @@ Volume::Volume(VolumeManager *vm, const fstab_rec* rec, int flags) {
     mCurrentlyMountedKdev = -1;
     mPartIdx = rec->partnum;
     mRetryMount = false;
+    mEarlyMount = true;
 }
 
 Volume::~Volume() {
