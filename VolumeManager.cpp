@@ -238,7 +238,7 @@ int VolumeManager::addVolume(Volume *v) {
     // Mark the valid entry on the first insertion of the card on handleBlockEvent()
     VolumeCollection::iterator it;
     for (it = mVolumes->begin(); it != mVolumes->end(); ++it) {
-        if(!strncmp((*it)->getLabel(), v->getLabel(), strlen((*it)->getLabel()))) {
+        if(!strcmp((*it)->getLabel(), v->getLabel())) {
             (*it)->setValidSysfs(false);
             v->setValidSysfs(false);
         }
