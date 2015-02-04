@@ -291,6 +291,10 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
 #endif
         if (getState() != Volume::State_Formatting) {
             setState(Volume::State_Idle);
+            if (mEarlyMount == true) {
+                mEarlyMount = false;
+                mountVol();
+            }
             if (mRetryMount == true) {
                 mRetryMount = false;
                 mountVol();
