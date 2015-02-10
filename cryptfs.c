@@ -2020,7 +2020,22 @@ int cryptfs_setup_volume(const char *label, int major, int minor,
 
 int cryptfs_crypto_complete(void)
 {
-  return do_crypto_complete("/data");
+  int mdtp_activated = fs_mgr_is_mdtp_activated();
+  int crypto_state = do_crypto_complete("/data");
+
+  /* if MDTP is activated, it should be reflected in the crypto state */
+  if(mdtp_activated){
+    if (crypto_state != CRYPTO_COMPLETE_ENCRYPTED ){
+      /* MDTP is activated and crypto state is bad */
+      return CRYPTO_COMPLETE_ERROR_MDTP_ACTIVATED;
+    } else {
+      /* MDTP is activated and crypto state is ok */
+      return CRYPTO_COMPLETE_ENCRYPTED_MDTP_ACTIVATED;
+    }
+  }
+
+  /* mdtp is not activated, return the crypto state only */
+  return crypto_state;
 }
 
 int check_unmounted_and_get_ftr(struct crypt_mnt_ftr* crypt_ftr)
@@ -3100,7 +3115,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     }
 
     property_get("ro.crypto.state", encrypted_state, "");
-    if (!strcmp(encrypted_state, "encrypted") && !previously_encrypted_upto) {
+    if (how != CRYPTO_ENABLE_WIPE && !strcmp(encrypted_state, "encrypted") && !previously_encrypted_upto) {
         SLOGE("Device is already running encrypted, aborting");
         goto error_unencrypted;
     }
@@ -3353,8 +3368,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
         }
 
-        if (how == CRYPTO_ENABLE_INPLACE)
-            crypt_ftr.flags |= CRYPT_FDE_COMPLETED;
+
+        crypt_ftr.flags |= CRYPT_FDE_COMPLETED;
         put_crypt_ftr_and_key(&crypt_ftr);
 
         if (how == CRYPTO_ENABLE_WIPE
