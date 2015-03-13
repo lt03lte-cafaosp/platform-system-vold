@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <fnmatch.h>
 
@@ -246,6 +247,16 @@ void DirectVolume::handleDiskAdded(const char * /*devpath*/,
     }
 }
 
+void DirectVolume::placeMarker(const char *name)
+{
+    int fd = open("/proc/bootkpi/marker_entry", O_RDWR);
+
+    if (fd >= 0) {
+        write(fd, name, strlen(name));
+        close(fd);
+    }
+}
+
 void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
@@ -294,6 +305,7 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
             if (mEarlyMount == true) {
                 mEarlyMount = false;
                 mountVol();
+                placeMarker("usb_early_mount");
             }
             if (mRetryMount == true) {
                 mRetryMount = false;

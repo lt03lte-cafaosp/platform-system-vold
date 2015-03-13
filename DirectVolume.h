@@ -89,6 +89,7 @@ private:
     int doMountVfat(const char *deviceNode, const char *mountPoint);
     int getUICCVolumeNum(const char *dp);
 
+    void placeMarker(const char *name);
 };
 
 typedef android::List<DirectVolume *> DirectVolumeCollection;
