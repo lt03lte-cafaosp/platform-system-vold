@@ -357,6 +357,8 @@ void DirectVolume::handleDiskRemoved(const char * /*devpath*/,
              getLabel(), getFuseMountpoint(), major, minor);
     mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskRemoved,
                                              msg, false);
+    // add a time delay here to let mountservice handle the update
+    sleep(4);
 
     if ((dev_t) MKDEV(major, minor) == mCurrentlyMountedKdev) {
 
@@ -401,16 +403,16 @@ void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
         /*
          * Yikes, our mounted partition is going away!
          */
+        snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
+                 getLabel(), getFuseMountpoint(), major, minor);
+        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
+                                             msg, false);
+        sleep(4);
 
         bool providesAsec = (getFlags() & VOL_PROVIDES_ASEC) != 0;
         if (providesAsec && mVm->cleanupAsec(this, true)) {
             SLOGE("Failed to cleanup ASEC - unmount will probably fail!");
         }
-
-        snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
-                 getLabel(), getFuseMountpoint(), major, minor);
-        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
-                                             msg, false);
 
         if (Volume::unmountVol(true, false)) {
             SLOGE("Failed to unmount volume on bad removal (%s)", 
