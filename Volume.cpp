@@ -545,23 +545,9 @@ int Volume::unmountVol(bool force, bool revert) {
     setState(Volume::State_Unmounting);
     usleep(1000 * 1000); // Give the framework some time to react
 
-    char service[64];
-    snprintf(service, 64, "fuse_%s", getLabel());
-    property_set("ctl.stop", service);
-    /* Give it a chance to stop.  I wish we had a synchronous way to determine this... */
-    sleep(1);
-
-    // TODO: determine failure mode if FUSE times out
-
     if (providesAsec && doUnmount(Volume::SEC_ASECDIR_EXT, force) != 0) {
         SLOGE("Failed to unmount secure area on %s (%s)", getMountpoint(), strerror(errno));
         goto out_mounted;
-    }
-
-    /* Now that the fuse daemon is dead, unmount it */
-    if (doUnmount(getFuseMountpoint(), force) != 0) {
-        SLOGE("Failed to unmount %s (%s)", getFuseMountpoint(), strerror(errno));
-        goto fail_remount_secure;
     }
 
     /* Unmount the real sd card */
