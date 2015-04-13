@@ -997,11 +997,12 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned c
   tgt->sector_start = 0;
   tgt->length = crypt_ftr->fs_size;
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-  if(is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name) &&
-						is_hw_fde_enabled())
-    strlcpy(tgt->target_type, "req-crypt",DM_MAX_TYPE_NAME);
-  else
+  if (is_hw_fde_enabled()) {
+    if (is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name))
+      strlcpy(tgt->target_type, "req-crypt",DM_MAX_TYPE_NAME);
+  } else {
     strlcpy(tgt->target_type, "crypt", DM_MAX_TYPE_NAME);
+  }
 #else
   strcpy(tgt->target_type, "crypt");
 #endif
@@ -1056,7 +1057,11 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
     v = (struct dm_target_versions *) &buffer[sizeof(struct dm_ioctl)];
     while (v->next) {
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-        if (! strcmp(v->name, "crypt") || ! strcmp(v->name, "req-crypt")) {
+        if (is_hw_fde_enabled())
+            flag = (!strcmp(v->name, "crypt") || !strcmp(v->name, "req-crypt"));
+        else
+            flag = (!strcmp(v->name, "crypt"));
+        if (flag) {
 #else
         if (! strcmp(v->name, "crypt")) {
 #endif
@@ -3164,16 +3169,16 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 #ifndef CONFIG_HW_DISK_ENCRYPTION
         strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
 #else
-        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
-        wipe_hw_device_encryption_key((char*)crypt_ftr.crypto_type_name);
-        if(!set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name))
-
-
-        rc = set_hw_device_encryption_key(passwd,
-                                          (char*) crypt_ftr.crypto_type_name);
-        if (!rc) {
-          SLOGE("Error initializing device encryption hardware key. rc = %d", rc);
-          goto error_shutting_down;
+        if (is_hw_fde_enabled()) {
+            strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
+            wipe_hw_device_encryption_key((char*)crypt_ftr.crypto_type_name);
+            rc = set_hw_device_encryption_key(passwd, (char*) crypt_ftr.crypto_type_name);
+            if (!rc) {
+              SLOGE("Error initializing device encryption hardware key. rc = %d", rc);
+              goto error_shutting_down;
+            }
+        } else {
+          strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
         }
 #endif
 
