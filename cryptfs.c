@@ -1800,7 +1800,9 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   if(is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name)) {
     key_index = set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name);
     if (key_index < 0) {
-      rc = -1;
+      rc = ++crypt_ftr->failed_decrypt_count;
+      put_crypt_ftr_and_key(crypt_ftr);
+      goto errout;
     }
     else {
       if (is_ice_enabled()) {
