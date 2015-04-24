@@ -33,6 +33,8 @@
 #include "ResponseCode.h"
 #include "cryptfs.h"
 
+#define MAX_KPI_LENGTH 20
+
 // #define PARTITION_DEBUG
 
 PathInfo::PathInfo(const char *p)
@@ -257,6 +259,28 @@ void DirectVolume::placeMarker(const char *name)
     }
 }
 
+void DirectVolume::markDeviceClassName(const char *devpath) {
+    char s[] = "/";
+    char *dev_path = (char *) devpath;
+    char *devname;
+    char mnt_dev[MAX_KPI_LENGTH];
+    int count = 0;
+    size_t length;
+
+    devname = strtok(dev_path, s);
+    while (devname != NULL) {
+        if (count == 3) {
+            length = (strlen("Mount-") + strlen(devname) + 1);
+            snprintf(mnt_dev, (length > MAX_KPI_LENGTH ? MAX_KPI_LENGTH : length),
+                    "Mount-%s", devname);
+            placeMarker(mnt_dev);
+            return;
+        }
+        devname = strtok(NULL, s);
+        count++;
+    }
+}
+
 void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
@@ -305,7 +329,7 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
             if (mEarlyMount == true) {
                 mEarlyMount = false;
                 mountVol();
-                placeMarker("usb_early_mount");
+                markDeviceClassName(devpath);
             }
             if (mRetryMount == true) {
                 mRetryMount = false;

@@ -90,6 +90,7 @@ private:
     int getUICCVolumeNum(const char *dp);
 
     void placeMarker(const char *name);
+    void markDeviceClassName(const char *devpath);
 };
 
 typedef android::List<DirectVolume *> DirectVolumeCollection;
