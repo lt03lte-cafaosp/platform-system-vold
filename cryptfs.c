@@ -97,6 +97,10 @@ static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+static int previous_type;
+#endif
+
 static int keymaster_init(keymaster_device_t **keymaster_dev)
 {
     int rc;
@@ -2129,7 +2133,11 @@ int cryptfs_check_passwd(char *passwd)
                 // Note that adjust_passwd only recognises patterns
                 // so we can safely use CRYPT_TYPE_PATTERN
                 SLOGI("Updating pattern to new format");
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+                cryptfs_changepw(CRYPT_TYPE_PATTERN, passwd, passwd);
+#else
                 cryptfs_changepw(CRYPT_TYPE_PATTERN, passwd);
+#endif
             }
         }
         free(adjusted_passwd);
@@ -3697,7 +3705,11 @@ int cryptfs_enable_default(char *howarg, int allow_reboot)
                           DEFAULT_PASSWORD, allow_reboot);
 }
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+int cryptfs_changepw(int crypt_type, const char *currentpw, const char *newpw)
+#else
 int cryptfs_changepw(int crypt_type, const char *newpw)
+#endif
 {
     struct crypt_mnt_ftr crypt_ftr;
     unsigned char decrypted_master_key[KEY_LEN_BYTES];
@@ -3726,6 +3738,16 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
         newpw = adjusted_passwd;
     }
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+    if (previous_type == CRYPT_TYPE_DEFAULT)
+        currentpw = DEFAULT_PASSWORD;
+    previous_type = crypt_type;
+
+    char* adjusted_cpw = adjust_passwd(currentpw);
+    if (adjusted_cpw)
+        currentpw = adjusted_cpw;
+#endif
+
     encrypt_master_key(crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
                                                         : newpw,
                        crypt_ftr.salt,
@@ -3737,10 +3759,20 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
     put_crypt_ftr_and_key(&crypt_ftr);
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-    if (is_hw_fde_enabled())
-        update_hw_device_encryption_key(crypt_type == CRYPT_TYPE_DEFAULT ?
+    int ret;
+    if (is_hw_fde_enabled()) {
+        ret = update_hw_device_encryption_key(currentpw,
+                                    crypt_type == CRYPT_TYPE_DEFAULT ?
                                     DEFAULT_PASSWORD : newpw,
                                     (char*)crypt_ftr.crypto_type_name);
+        if (ret) {
+            SLOGE("Error updating device encryption hardware key ret %d", ret);
+            return -1;
+        } else {
+            SLOGI("Encryption hardware key updated");
+        }
+    }
+    free(adjusted_cpw);
 #endif
     return 0;
 }

@@ -235,7 +235,11 @@ extern "C" {
   int cryptfs_verify_passwd(char *newpw);
   int cryptfs_restart(void);
   int cryptfs_enable(char *flag, int type, char *passwd, int allow_reboot);
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+  int cryptfs_changepw(int type, const char *currentpw, const char *newpw);
+#else
   int cryptfs_changepw(int type, const char *newpw);
+#endif
   int cryptfs_enable_default(char *flag, int allow_reboot);
   int cryptfs_setup_volume(const char *label, int major, int minor,
                            char *crypto_dev_path, unsigned int max_pathlen,
