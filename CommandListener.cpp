@@ -631,12 +631,27 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         }
     } else if (!strcmp(argv[1], "changepw")) {
         const char* syntax = "Usage: cryptfs changepw "
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+                             "default|password|pin|pattern [currentpasswd] "
                              "default|password|pin|pattern [newpasswd]";
+#else
+                             "default|password|pin|pattern [newpasswd]";
+#endif
         const char* password;
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+        const char* currentpassword;
+        if (argc == 4) {
+            currentpassword = "";
+            password = "";
+        } else if (argc == 5) {
+            currentpassword = argv[3];
+            password = argv[4];
+#else
         if (argc == 3) {
             password = "";
         } else if (argc == 4) {
             password = argv[3];
+#endif
         } else {
             cli->sendMsg(ResponseCode::CommandSyntaxError, syntax, false);
             return 0;
@@ -647,7 +662,11 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             return 0;
         }
         SLOGD("cryptfs changepw %s {}", argv[2]);
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+        rc = cryptfs_changepw(type, currentpassword, password);
+#else
         rc = cryptfs_changepw(type, password);
+#endif
     } else if (!strcmp(argv[1], "verifypw")) {
         if (argc != 3) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs verifypw <passwd>", false);

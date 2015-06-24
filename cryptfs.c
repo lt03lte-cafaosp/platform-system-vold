@@ -97,6 +97,10 @@ static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+static int previous_type;
+#endif
+
 static int keymaster_init(keymaster_device_t **keymaster_dev)
 {
     int rc;
@@ -2129,7 +2133,11 @@ int cryptfs_check_passwd(char *passwd)
                 // Note that adjust_passwd only recognises patterns
                 // so we can safely use CRYPT_TYPE_PATTERN
                 SLOGI("Updating pattern to new format");
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+                cryptfs_changepw(CRYPT_TYPE_PATTERN, passwd, passwd);
+#else
                 cryptfs_changepw(CRYPT_TYPE_PATTERN, passwd);
+#endif
             }
         }
         free(adjusted_passwd);
@@ -2534,37 +2542,6 @@ errout:
     return rc;
 }
 
-#define RETRY_OPEN_CRYPTO_BLK 10
-
-enum InplaceType {
-    INPLACE_EXT4,
-    INPLACE_F2FS,
-    INPLACE_FULL
-};
-
-static int cryptfs_open_crypto_blkdev(char *crypto_blkdev, enum InplaceType type) {
-    int fd, retry_count = 1;
-    while (1) {
-        if (type == INPLACE_EXT4 || type == INPLACE_FULL) {
-            fd = open(crypto_blkdev, O_WRONLY);
-        } else {//type == INPLACE_F2FS
-            fd = open64(crypto_blkdev, O_WRONLY);
-        }
-        if (fd < 0) {
-            if (retry_count == RETRY_OPEN_CRYPTO_BLK) {
-                return -1;
-            }
-            SLOGE("Error opening crypto_blkdev %s. Retried %d times, err=%d(%s)\n",
-                  crypto_blkdev, retry_count, errno, strerror(errno));
-            retry_count++;
-            usleep(2000);
-            continue;
-        }
-        break;
-    }
-    return fd;
-}
-
 static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
                                        char *real_blkdev,
                                        off64_t size,
@@ -2592,12 +2569,19 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
         goto errout;
     }
 
-    SLOGI("Opening crypto_blkdev %s for ext4 inplace encrypt.", crypto_blkdev);
-    if ( (data.cryptofd = cryptfs_open_crypto_blkdev(crypto_blkdev, INPLACE_EXT4)) < 0) {
-        SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s)\n",
-              crypto_blkdev, errno, strerror(errno));
-        rc = ENABLE_INPLACE_ERR_DEV;
-        goto errout;
+    // Wait until the block device appears.  Re-use the mount retry values since it is reasonable.
+    int retries = RETRY_MOUNT_ATTEMPTS;
+    while ((data.cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) {
+        if (--retries) {
+            SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s), retrying\n",
+                  crypto_blkdev, errno, strerror(errno));
+            sleep(RETRY_MOUNT_DELAY_SECONDS);
+        } else {
+            SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s)\n",
+                  crypto_blkdev, errno, strerror(errno));
+            rc = ENABLE_INPLACE_ERR_DEV;
+            goto errout;
+        }
     }
 
     if (setjmp(setjmp_env)) {
@@ -2724,8 +2708,7 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
         goto errout;
     }
 
-    SLOGI("Opening crypto_blkdev %s for f2fs inplace encrypt.", crypto_blkdev);
-    if ( (data.cryptofd = cryptfs_open_crypto_blkdev(crypto_blkdev, INPLACE_F2FS)) < 0) {
+    if ( (data.cryptofd = open64(crypto_blkdev, O_WRONLY)) < 0) {
         SLOGE("Error opening crypto_blkdev %s for f2fs inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
         rc = ENABLE_INPLACE_ERR_DEV;
@@ -2798,8 +2781,7 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
     }
 
 
-    SLOGI("Opening crypto_blkdev %s for inplace encrypt.", crypto_blkdev);
-    if ( (cryptofd = cryptfs_open_crypto_blkdev(crypto_blkdev, INPLACE_FULL)) < 0) {
+    if ( (cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) {
         SLOGE("Error opening crypto_blkdev %s for inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
         close(realfd);
@@ -3697,7 +3679,11 @@ int cryptfs_enable_default(char *howarg, int allow_reboot)
                           DEFAULT_PASSWORD, allow_reboot);
 }
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+int cryptfs_changepw(int crypt_type, const char *currentpw, const char *newpw)
+#else
 int cryptfs_changepw(int crypt_type, const char *newpw)
+#endif
 {
     struct crypt_mnt_ftr crypt_ftr;
     unsigned char decrypted_master_key[KEY_LEN_BYTES];
@@ -3726,6 +3712,16 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
         newpw = adjusted_passwd;
     }
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+    if (previous_type == CRYPT_TYPE_DEFAULT)
+        currentpw = DEFAULT_PASSWORD;
+    previous_type = crypt_type;
+
+    char* adjusted_cpw = adjust_passwd(currentpw);
+    if (adjusted_cpw)
+        currentpw = adjusted_cpw;
+#endif
+
     encrypt_master_key(crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
                                                         : newpw,
                        crypt_ftr.salt,
@@ -3737,10 +3733,20 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
     put_crypt_ftr_and_key(&crypt_ftr);
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-    if (is_hw_fde_enabled())
-        update_hw_device_encryption_key(crypt_type == CRYPT_TYPE_DEFAULT ?
+    int ret;
+    if (is_hw_fde_enabled()) {
+        ret = update_hw_device_encryption_key(currentpw,
+                                    crypt_type == CRYPT_TYPE_DEFAULT ?
                                     DEFAULT_PASSWORD : newpw,
                                     (char*)crypt_ftr.crypto_type_name);
+        if (ret) {
+            SLOGE("Error updating device encryption hardware key ret %d", ret);
+            return -1;
+        } else {
+            SLOGI("Encryption hardware key updated");
+        }
+    }
+    free(adjusted_cpw);
 #endif
     return 0;
 }
