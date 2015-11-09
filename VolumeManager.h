@@ -193,6 +193,7 @@ public:
      * ensures that path belongs to a volume managed by vold.
      */
     int mkdirs(char* path);
+    int sendInfo();
 
 private:
     VolumeManager();

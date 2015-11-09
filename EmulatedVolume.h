@@ -44,6 +44,7 @@ public:
 protected:
     status_t doMount() override;
     status_t doUnmount() override;
+    status_t readMetadata() override;
 
 private:
     std::string mRawPath;

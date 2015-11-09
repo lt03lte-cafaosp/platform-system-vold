@@ -148,6 +148,9 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     // TODO: tease out methods not directly related to volumes
 
     std::string cmd(argv[1]);
+    if (cmd == "getinfo") {
+        return sendGenericOkFail(cli, vm->sendInfo());
+    }
     if (cmd == "reset") {
         return sendGenericOkFail(cli, vm->reset());
 
