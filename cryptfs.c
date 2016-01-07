@@ -1668,7 +1668,7 @@ static int create_encrypted_random_key(char *passwd, unsigned char *master_key, 
 int wait_and_unmount(const char *mountpoint, bool kill)
 {
     int i, err, rc;
-#define WAIT_UNMOUNT_COUNT 20
+#define WAIT_UNMOUNT_COUNT 200
 
     /*  Now umount the tmpfs filesystem */
     for (i=0; i<WAIT_UNMOUNT_COUNT; i++) {
@@ -1685,18 +1685,18 @@ int wait_and_unmount(const char *mountpoint, bool kill)
 
         err = errno;
 
-        /* If allowed, be increasingly aggressive before the last two retries */
+        /* If allowed, be increasingly aggressive before the last 2 seconds */
         if (kill) {
-            if (i == (WAIT_UNMOUNT_COUNT - 3)) {
+            if (i == (WAIT_UNMOUNT_COUNT - 30)) {
                 SLOGW("sending SIGHUP to processes with open files\n");
                 vold_killProcessesWithOpenFiles(mountpoint, SIGTERM);
-            } else if (i == (WAIT_UNMOUNT_COUNT - 2)) {
+            } else if (i == (WAIT_UNMOUNT_COUNT - 20)) {
                 SLOGW("sending SIGKILL to processes with open files\n");
                 vold_killProcessesWithOpenFiles(mountpoint, SIGKILL);
             }
         }
 
-        sleep(1);
+        usleep(100000);
     }
 
     if (i < WAIT_UNMOUNT_COUNT) {
