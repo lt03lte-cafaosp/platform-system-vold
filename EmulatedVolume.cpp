@@ -53,6 +53,10 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device,
 EmulatedVolume::~EmulatedVolume() {
 }
 
+status_t EmulatedVolume::readMetadata() {
+    return OK;
+}
+
 status_t EmulatedVolume::doMount() {
     // We could have migrated storage to an adopted private volume, so always
     // call primary storage "emulated" to avoid media rescans.

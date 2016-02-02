@@ -39,6 +39,10 @@
 #include <base/stringprintf.h>
 #include <cutils/fs.h>
 #include <cutils/log.h>
+#include <cutils/klog.h>
+#include <cutils/properties.h>
+
+#include <fstream>
 
 #include <selinux/android.h>
 
@@ -215,6 +219,37 @@ VolumeManager::~VolumeManager() {
     delete mActiveContainers;
 }
 
+int VolumeManager::sendInfo() {
+
+    for (auto statusDisks : mDisks) {
+        for (std::string id : statusDisks->getVolId()){
+            auto vol = findVolume(id);
+
+            if (vol == NULL)
+                return -1;
+
+            if (vol->getState() ==
+                    android::vold::VolumeBase::State::kMounted) {
+                statusDisks->notifyEvent(ResponseCode::DiskCreated,
+                        StringPrintf("%d", statusDisks->getFlags()));
+                statusDisks->readMetadata();
+                vol->notifyVolEvent(ResponseCode::VolumeCreated,
+                        StringPrintf("%d \"%s\" \"%s\"",
+                        vol->getType(), vol->getDiskId().c_str(),
+                        vol->getPartGuid().c_str()));
+                statusDisks->notifyEvent(ResponseCode::DiskScanned);
+                vol->setVolState(android::vold::VolumeBase::State::kChecking);
+                vol->notifyVolEvent(ResponseCode::VolumePathChanged, vol->getPath());
+                vol->notifyVolEvent(ResponseCode::VolumeInternalPathChanged,
+                        vol->getInternalPath());
+                vol->readMetadata();
+                vol->setVolState(android::vold::VolumeBase::State::kMounted);
+            }
+        }
+    }
+    return 0;
+}
+
 char *VolumeManager::asecHash(const char *id, char *buffer, size_t len) {
     static const char* digits = "0123456789abcdef";
 
@@ -285,6 +320,8 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
 
     std::string eventPath(evt->findParam("DEVPATH"));
     std::string devType(evt->findParam("DEVTYPE"));
+    std::string id;
+    int volFlags;
 
     if (devType != "disk") return;
 
@@ -309,6 +346,25 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
                         source->getNickname(), flags);
                 disk->create();
                 mDisks.push_back(std::shared_ptr<android::vold::Disk>(disk));
+                for (std::string volumeId : disk->getVolId()) {
+                    auto vol = findVolume(volumeId);
+                    if (vol != NULL && vol->getState()
+                            != android::vold::VolumeBase::State::kMounted &&
+                            vol->getEarlyMount() == true) {
+                        vol->setMountFlags(android::vold::VolumeBase::kVisible);
+                        int res = vol->mount();
+                        if (res == 0) {
+                            setPrimary(vol);
+                            vol->setEarlyMount(false);
+                            if (major == kMajorBlockMmc) {
+                                printMarker("Early MMC Mount");
+                            } else {
+                                printMarker("Early USB Mount");
+                            }
+                            property_set("vold.earlymount", "1");
+                        }
+                    }
+                }
                 break;
             }
         }

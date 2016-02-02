@@ -37,7 +37,7 @@ namespace vold {
 
 VolumeBase::VolumeBase(Type type) :
         mType(type), mMountFlags(0), mMountUserId(-1), mCreated(false), mState(
-                State::kUnmounted), mSilent(false) {
+                State::kUnmounted), mSilent(false), mEarlyMount(true) {
 }
 
 VolumeBase::~VolumeBase() {
@@ -47,6 +47,10 @@ VolumeBase::~VolumeBase() {
 void VolumeBase::setState(State state) {
     mState = state;
     notifyEvent(ResponseCode::VolumeStateChanged, StringPrintf("%d", mState));
+}
+
+void VolumeBase::setEarlyMount(bool mEarlyMountstatus) {
+    mEarlyMount = mEarlyMountstatus;
 }
 
 status_t VolumeBase::setDiskId(const std::string& diskId) {

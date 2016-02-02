@@ -83,12 +83,14 @@ public:
     State getState() { return mState; }
     const std::string& getPath() { return mPath; }
     const std::string& getInternalPath() { return mInternalPath; }
+    status_t getEarlyMount() { return mEarlyMount; }
 
     status_t setDiskId(const std::string& diskId);
     status_t setPartGuid(const std::string& partGuid);
     status_t setMountFlags(int mountFlags);
     status_t setMountUserId(userid_t mountUserId);
     status_t setSilent(bool silent);
+    void setEarlyMount(bool mEarlyMountstatus);
 
     void addVolume(const std::shared_ptr<VolumeBase>& volume);
     void removeVolume(const std::shared_ptr<VolumeBase>& volume);
@@ -100,6 +102,10 @@ public:
     status_t mount();
     status_t unmount();
     status_t format(const std::string& fsType);
+    void setVolState(State state) { setState(state); }
+    void notifyVolEvent(int msg) { notifyEvent(msg); }
+    void notifyVolEvent(int msg, const std::string& value) { notifyEvent(msg, value); }
+    virtual status_t readMetadata() = 0;
 
 protected:
     explicit VolumeBase(Type type);
@@ -140,6 +146,8 @@ private:
     std::string mInternalPath;
     /* Flag indicating that volume should emit no events */
     bool mSilent;
+    /* Flag indicating that volume earrlyMount status */
+    bool mEarlyMount;
 
     /* Volumes stacked on top of this volume */
     std::list<std::shared_ptr<VolumeBase>> mVolumes;

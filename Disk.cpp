@@ -105,6 +105,13 @@ std::shared_ptr<VolumeBase> Disk::findVolume(const std::string& id) {
     return nullptr;
 }
 
+std::vector<std::string> Disk::getVolId() {
+    for (auto vol : mVolumes) {
+        volumeList.push_back(vol->getId());
+    }
+    return volumeList;
+}
+
 void Disk::listVolumes(VolumeBase::Type type, std::list<std::string>& list) {
     for (auto vol : mVolumes) {
         if (vol->getType() == type) {

@@ -66,6 +66,8 @@ public:
     std::shared_ptr<VolumeBase> findVolume(const std::string& id);
 
     void listVolumes(VolumeBase::Type type, std::list<std::string>& list);
+    std::vector<std::string> volumeList;
+    std::vector<std::string> getVolId();
 
     status_t create();
     status_t destroy();
