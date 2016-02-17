@@ -149,6 +149,7 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
 
     std::string cmd(argv[1]);
     if (cmd == "getinfo") {
+        vm->sendEmulatedInfo();
         return sendGenericOkFail(cli, vm->sendInfo());
     }
     if (cmd == "reset") {

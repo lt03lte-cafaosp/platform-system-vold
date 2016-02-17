@@ -219,6 +219,17 @@ VolumeManager::~VolumeManager() {
     delete mActiveContainers;
 }
 
+void VolumeManager::sendEmulatedInfo() {
+    mInternalEmulated->destroy();
+    mInternalEmulated->create();
+    if (mInternalEmulated->getMountFlags() &
+            android::vold::VolumeBase::MountFlags::kPrimary) {
+        setPrimary(mInternalEmulated);
+    }
+    mAddedUsers.clear();
+    mStartedUsers.clear();
+}
+
 int VolumeManager::sendInfo() {
 
     for (auto statusDisks : mDisks) {
@@ -354,7 +365,6 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
                         vol->setMountFlags(android::vold::VolumeBase::kVisible);
                         int res = vol->mount();
                         if (res == 0) {
-                            setPrimary(vol);
                             vol->setEarlyMount(false);
                             if (major == kMajorBlockMmc) {
                                 printMarker("Early MMC Mount");
