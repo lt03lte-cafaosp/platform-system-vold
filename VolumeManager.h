@@ -194,7 +194,7 @@ public:
      */
     int mkdirs(char* path);
     int sendInfo();
-    void sendEmulatedInfo();
+    int sendEmulatedInfo();
 
 private:
     VolumeManager();

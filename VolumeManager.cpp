@@ -219,7 +219,7 @@ VolumeManager::~VolumeManager() {
     delete mActiveContainers;
 }
 
-void VolumeManager::sendEmulatedInfo() {
+int VolumeManager::sendEmulatedInfo() {
     mInternalEmulated->destroy();
     mInternalEmulated->create();
     if (mInternalEmulated->getMountFlags() &
@@ -228,6 +228,7 @@ void VolumeManager::sendEmulatedInfo() {
     }
     mAddedUsers.clear();
     mStartedUsers.clear();
+    return 0;
 }
 
 int VolumeManager::sendInfo() {
