@@ -3678,8 +3678,6 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
     /* save the key */
     put_crypt_ftr_and_key(&crypt_ftr);
 
-    free(adjusted_passwd);
-
 #ifdef CONFIG_HW_DISK_ENCRYPTION
     if (!strcmp((char *)crypt_ftr.crypto_type_name, "aes-xts")) {
         if (crypt_type == CRYPT_TYPE_DEFAULT) {
@@ -3695,6 +3693,7 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
         }
     }
 #endif
+    free(adjusted_passwd);
     return 0;
 }
 
