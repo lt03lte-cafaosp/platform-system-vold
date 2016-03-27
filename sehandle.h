@@ -17,8 +17,6 @@
 #ifndef _SEHANDLE_H
 #define _SEHANDLE_H
 
-#include <selinux/android.h>
-
 extern struct selabel_handle *sehandle;
 
 #endif

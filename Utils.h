@@ -18,7 +18,6 @@
 #define ANDROID_VOLD_UTILS_H
 
 #include <utils/Errors.h>
-#include <selinux/selinux.h>
 
 #include <vector>
 #include <string>
@@ -35,6 +34,7 @@ namespace android {
 namespace vold {
 
 /* SELinux contexts used depending on the block device type */
+typedef char* security_context_t;
 extern security_context_t sBlkidContext;
 extern security_context_t sBlkidUntrustedContext;
 extern security_context_t sFsckContext;
