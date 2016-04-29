@@ -235,27 +235,29 @@ int VolumeManager::sendInfo() {
 
     for (auto statusDisks : mDisks) {
         for (std::string id : statusDisks->getVolId()){
-            auto vol = findVolume(id);
+            if (id.find("public") != std::string::npos) {
+                auto vol = findVolume(id);
 
-            if (vol == NULL)
-                return -1;
+                if (vol == NULL)
+                    return -1;
 
-            if (vol->getState() ==
-                    android::vold::VolumeBase::State::kMounted) {
-                statusDisks->notifyEvent(ResponseCode::DiskCreated,
-                        StringPrintf("%d", statusDisks->getFlags()));
-                statusDisks->readMetadata();
-                vol->notifyVolEvent(ResponseCode::VolumeCreated,
-                        StringPrintf("%d \"%s\" \"%s\"",
-                        vol->getType(), vol->getDiskId().c_str(),
-                        vol->getPartGuid().c_str()));
-                statusDisks->notifyEvent(ResponseCode::DiskScanned);
-                vol->setVolState(android::vold::VolumeBase::State::kChecking);
-                vol->notifyVolEvent(ResponseCode::VolumePathChanged, vol->getPath());
-                vol->notifyVolEvent(ResponseCode::VolumeInternalPathChanged,
-                        vol->getInternalPath());
-                vol->readMetadata();
-                vol->setVolState(android::vold::VolumeBase::State::kMounted);
+                if (vol->getState() ==
+                        android::vold::VolumeBase::State::kMounted) {
+                    statusDisks->notifyEvent(ResponseCode::DiskCreated,
+                            StringPrintf("%d", statusDisks->getFlags()));
+                    statusDisks->readMetadata();
+                    vol->notifyVolEvent(ResponseCode::VolumeCreated,
+                            StringPrintf("%d \"%s\" \"%s\"",
+                            vol->getType(), vol->getDiskId().c_str(),
+                            vol->getPartGuid().c_str()));
+                    statusDisks->notifyEvent(ResponseCode::DiskScanned);
+                    vol->setVolState(android::vold::VolumeBase::State::kChecking);
+                    vol->notifyVolEvent(ResponseCode::VolumePathChanged, vol->getPath());
+                    vol->notifyVolEvent(ResponseCode::VolumeInternalPathChanged,
+                            vol->getInternalPath());
+                    vol->readMetadata();
+                    vol->setVolState(android::vold::VolumeBase::State::kMounted);
+                }
             }
         }
     }
@@ -359,20 +361,22 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
                 disk->create();
                 mDisks.push_back(std::shared_ptr<android::vold::Disk>(disk));
                 for (std::string volumeId : disk->getVolId()) {
-                    auto vol = findVolume(volumeId);
-                    if (vol != NULL && vol->getState()
-                            != android::vold::VolumeBase::State::kMounted &&
-                            vol->getEarlyMount() == true) {
-                        vol->setMountFlags(android::vold::VolumeBase::kVisible);
-                        int res = vol->mount();
-                        if (res == 0) {
-                            vol->setEarlyMount(false);
-                            if (major == kMajorBlockMmc) {
-                                printMarker("Early MMC Mount");
-                            } else {
-                                printMarker("Early USB Mount");
+                    if (volumeId.find("public") != std::string::npos) {
+                        auto vol = findVolume(volumeId);
+                        if (vol != NULL && vol->getState()
+                                != android::vold::VolumeBase::State::kMounted &&
+                                vol->getEarlyMount() == true) {
+                            vol->setMountFlags(android::vold::VolumeBase::kVisible);
+                            int res = vol->mount();
+                            if (res == 0) {
+                                vol->setEarlyMount(false);
+                                if (major == kMajorBlockMmc) {
+                                    printMarker("Early MMC Mount");
+                                } else {
+                                    printMarker("Early USB Mount");
+                                }
+                                property_set("vold.earlymount", "1");
                             }
-                            property_set("vold.earlymount", "1");
                         }
                     }
                 }
@@ -697,8 +701,13 @@ int VolumeManager::reset() {
     mInternalEmulated->destroy();
     mInternalEmulated->create();
     for (auto disk : mDisks) {
-        disk->destroy();
-        disk->create();
+        for (std::string diskType : disk->getVolId()) {
+            std::size_t found = diskType.find("public");
+            if (found == std::string::npos) {
+                disk->destroy();
+                disk->create();
+            }
+        }
     }
     mAddedUsers.clear();
     mStartedUsers.clear();
