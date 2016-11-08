@@ -106,6 +106,12 @@ std::shared_ptr<VolumeBase> Disk::findVolume(const std::string& id) {
 }
 
 std::vector<std::string> Disk::getVolId() {
+    // Make sure the list is empty before filling the list
+    // to avoid duplicates
+    if (!volumeList.empty()) {
+        volumeList.clear();
+    }
+
     for (auto vol : mVolumes) {
         volumeList.push_back(vol->getId());
     }
