@@ -42,6 +42,7 @@
 #include <cutils/log.h>
 #include <cutils/properties.h>
 #include <logwrap/logwrap.h>
+#include <selinux/selinux.h>
 
 #include "Ext4.h"
 #include "Utils.h"

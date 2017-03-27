@@ -41,6 +41,7 @@
 #include <base/stringprintf.h>
 #include <cutils/log.h>
 #include <cutils/properties.h>
+#include <selinux/selinux.h>
 
 #include <logwrap/logwrap.h>
 

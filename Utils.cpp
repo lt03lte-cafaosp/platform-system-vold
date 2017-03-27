@@ -61,6 +61,13 @@ status_t CreateDeviceNode(const std::string& path, dev_t dev) {
     const char* cpath = path.c_str();
     status_t res = 0;
 
+    char* secontext = nullptr;
+    if (sehandle) {
+        if (!selabel_lookup(sehandle, &secontext, cpath, S_IFBLK)) {
+            setfscreatecon(secontext);
+        }
+    }
+
     mode_t mode = 0660 | S_IFBLK;
     if (mknod(cpath, mode, dev) < 0) {
         if (errno != EEXIST) {
@@ -68,6 +75,11 @@ status_t CreateDeviceNode(const std::string& path, dev_t dev) {
                     << ":" << minor(dev) << " at " << path;
             res = -errno;
         }
+    }
+
+    if (secontext) {
+        setfscreatecon(nullptr);
+        freecon(secontext);
     }
 
     return res;
@@ -85,7 +97,19 @@ status_t DestroyDeviceNode(const std::string& path) {
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
     const char* cpath = path.c_str();
 
+    char* secontext = nullptr;
+    if (sehandle) {
+        if (!selabel_lookup(sehandle, &secontext, cpath, S_IFDIR)) {
+            setfscreatecon(secontext);
+        }
+    }
+
     int res = fs_prepare_dir(cpath, mode, uid, gid);
+
+    if (secontext) {
+        setfscreatecon(nullptr);
+        freecon(secontext);
+    }
 
     if (res == 0) {
         return OK;
@@ -232,7 +256,15 @@ status_t ForkExecvp(const std::vector<std::string>& args, security_context_t con
         }
     }
 
+    if (setexeccon(context)) {
+        LOG(ERROR) << "Failed to setexeccon";
+        abort();
+    }
     status_t res = android_fork_execvp(argc, argv, NULL, false, true);
+    if (setexeccon(nullptr)) {
+        LOG(ERROR) << "Failed to setexeccon";
+        abort();
+    }
 
     free(argv);
     return res;
@@ -256,7 +288,15 @@ status_t ForkExecvp(const std::vector<std::string>& args,
     }
     output.clear();
 
+    if (setexeccon(context)) {
+        LOG(ERROR) << "Failed to setexeccon";
+        abort();
+    }
     FILE* fp = popen(cmd.c_str(), "r");
+    if (setexeccon(nullptr)) {
+        LOG(ERROR) << "Failed to setexeccon";
+        abort();
+    }
 
     if (!fp) {
         PLOG(ERROR) << "Failed to popen " << cmd;

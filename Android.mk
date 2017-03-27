@@ -48,6 +48,7 @@ common_shared_libraries := \
 	libext4_utils \
 	libf2fs_sparseblock \
 	libcrypto \
+	libselinux \
 	libutils \
 	libhardware \
 	libsoftkeymaster \
